@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Supply Lines · where frontier AI comes from</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🗺️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <div id="map" role="application" aria-label="World map of AI supply chains"></div>
+
+  <aside class="panel" id="panel" aria-label="Supply chain explorer">
+    <button class="handle" id="handle" aria-label="Expand or collapse panel"></button>
+    <div class="panel-head" id="head"></div>
+    <div class="search" role="search">
+      <input id="q" type="search" placeholder="Search labs, sites, companies, places…" autocomplete="off" spellcheck="false" aria-label="Search the map" aria-controls="qres">
+      <div class="qres" id="qres" role="listbox" hidden></div>
+    </div>
+    <div class="panel-body" id="body"></div>
+  </aside>
+
+  <div class="tools">
+    <button class="tbtn" id="plantsBtn" aria-pressed="true" aria-expanded="false">⚡ Power plants</button>
+    <div class="pop" id="plantsPop" hidden>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="plantsOn" checked> Show power plants</label>
+      <div class="fuels" id="fuels"></div>
+      <small>Plants of 50 MW and up, from WRI’s Global Power Plant Database (data circa 2019–21, so newer plants are missing). Zoom in to see them grow; tap one for details.</small>
+    </div>
+    <button class="tbtn" id="projBtn">Globe</button>
+  </div>
+</div>
+<script src="config.js"></script>
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/topojson-client.min.js"></script>
+<script src="data/topo.js"></script>
+<script src="data/rivers.js"></script>
+<script src="data/lakes.js"></script>
+<script src="data/admin.js"></script>
+<script src="data/plants.js"></script>
+<script src="data/graph.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
