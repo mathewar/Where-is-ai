@@ -25,3 +25,8 @@ Local preview: `npx serve .` (open via a server, not file://, so everything load
 ## Mapbox tiles
 In `config.js`, set `mapboxToken` to a public token (restrict it to your Vercel domain in the Mapbox dashboard).
 The app then loads Mapbox GL and the `mapboxStyle` you choose (satellite-streets by default) and draws the same overlays on top.
+
+## Shareable links
+The address bar tracks the journey, so any view can be shared or bookmarked:
+`https://where-is-ai.vercel.app/#/qwen/alicloud/litong/megaspeed?dim=chips`
+— the path is the breadcrumb trail of node ids, and `dim` is the optional filter. Back/forward buttons step through the journey.

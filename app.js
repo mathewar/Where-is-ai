@@ -90,7 +90,7 @@ function kindColor(n){ return dimColor(KIND[n.k][0]); }
 
 function renderHead(){
   let h = '<div class="brand"><b>Supply Lines <span>· AI labs, traced</span></b>'+
-    (trail.length?'<button class="iconbtn" data-home>Start over</button>':'')+'</div>';
+    (trail.length?'<span><button class="iconbtn" data-share>Share</button><button class="iconbtn" data-home>Start over</button></span>':'')+'</div>';
   if(trail.length){
     h += '<nav class="trail" aria-label="Journey">';
     trail.forEach((id,i)=>{ const n=byId[id];
@@ -151,7 +151,32 @@ function renderNode(id){
   body.innerHTML = h;
 }
 
+// ---------- shareable URL: #/lab/stop/stop?dim=chips ----------
+let fromURL=false;
+function stateHash(){ return trail.length ? '#/'+trail.map(encodeURIComponent).join('/')+(dimFilter?'?dim='+dimFilter:'') : ''; }
+function writeURL(){
+  const h=stateHash();
+  document.title = trail.length ? byId[current()].n+' · Supply Lines' : 'Supply Lines · where frontier AI comes from';
+  if(fromURL || location.hash===h || (!h && !location.hash)) return;
+  try{ history.pushState(null,'',h || location.pathname+location.search); }catch(e){}
+}
+function readURL(){
+  const m=(location.hash||'').match(/^#\/([^?]*)(?:\?(.*))?$/);
+  trail = m ? m[1].split('/').map(decodeURIComponent).filter(id=>byId[id]) : [];
+  const d = m && m[2] ? new URLSearchParams(m[2]).get('dim') : null;
+  dimFilter = d && DIMS[d] ? d : null;
+}
+window.addEventListener('popstate',()=>{ readURL(); fromURL=true; render(true); fromURL=false; });
+window.addEventListener('hashchange',()=>{ if(location.hash!==stateHash()){ readURL(); fromURL=true; render(true); fromURL=false; } });
+async function share(){
+  const url=location.href, title=document.title;
+  try{ if(navigator.share){ await navigator.share({title,url}); return; } }catch(e){ if(e&&e.name==='AbortError') return; }
+  let ok=false; try{ await navigator.clipboard.writeText(url); ok=true; }catch(e){}
+  const b=head.querySelector('[data-share]'); if(b){ b.textContent= ok?'Link copied':'Copy the address bar'; setTimeout(()=>{ if(b.isConnected) b.textContent='Share'; },1800); }
+}
+
 function render(move){
+  writeURL();
   renderHead();
   const id = current();
   if(id) renderNode(id); else renderHome();
@@ -225,6 +250,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='/' && document.activeElemen
 
 document.addEventListener('click', ev => {
   if(ev.target.closest('a')) return;
+  if(ev.target.closest('[data-share]')){ share(); return; }
   const t = ev.target.closest('[data-go],[data-jump],[data-home],[data-dim],[data-chain]');
   if(!t) return;
   if(t.hasAttribute('data-chain')){ const c=LONG[t.getAttribute('data-chain')]; trail=trail.slice(0,trail.indexOf(c[0])+1||undefined); if(!trail.length||trail[trail.length-1]!==c[0]) trail.push(c[0]); c.slice(1).forEach(x=>trail.push(x)); dimFilter=null; render(true); return; }
@@ -452,6 +478,7 @@ document.getElementById('projBtn').addEventListener('click',e=>{
   e.currentTarget.textContent = globe?'Flat map':'Globe';
 });
 
-render(false);
+readURL();
+fromURL=true; render(false); fromURL=false;
 initMap();
 })();
