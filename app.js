@@ -103,7 +103,7 @@ function renderHead(){
 }
 
 function renderHome(){
-  const us=['anthropic','openai','deepmind'], cn=['deepseek','qwen','moonshot','zhipu','bytedance','minimax'];
+  const us=['anthropic','openai','deepmind','xai','meta'], cn=['deepseek','qwen','moonshot','zhipu','bytedance','minimax'];
   const lb = ids => '<div class="labs">'+ids.map(id=>'<button class="labbtn" data-go="'+id+'"><b>'+esc(byId[id].n)+'</b><span>'+esc(byId[id].p)+'</span><span class="deep">Deepest chain: '+(LONG[id].length-1)+' steps</span></button>').join('')+'</div>';
   const choke = NODES.filter(n=>n.k!=='lab').map(n=>[n,reach[n.id].size]).sort((a,b)=>b[1]-a[1]||a[0].n.localeCompare(b[0].n)).slice(0,8);
   body.innerHTML =
@@ -112,7 +112,7 @@ function renderHome(){
     '<h2>United States & UK</h2>'+lb(us)+
     '<h2>China</h2>'+lb(cn)+
     '<h2>Chokepoints every lab runs through</h2>'+
-    '<div class="rows">'+choke.map(([n,c])=>'<button class="row" data-go="'+n.id+'" style="--c:'+kindColor(n)+'"><span class="bar"></span><span class="rn">'+esc(n.n)+'</span><span class="conf" style="border:0;padding:0;font-weight:500;color:var(--muted)">'+c+' of 9</span><span class="rp">'+esc(n.p)+' · '+labDots(n.id)+'</span></button>').join('')+'</div>'+
+    '<div class="rows">'+choke.map(([n,c])=>'<button class="row" data-go="'+n.id+'" style="--c:'+kindColor(n)+'"><span class="bar"></span><span class="rn">'+esc(n.n)+'</span><span class="conf" style="border:0;padding:0;font-weight:500;color:var(--muted)">'+c+' of '+LABS.length+'</span><span class="rp">'+esc(n.p)+' · '+labDots(n.id)+'</span></button>').join('')+'</div>'+
     '<div class="fine"><h2 style="margin-top:4px">How to read the links</h2>'+
     '<div class="legend-conf"><span class="conf c">Confirmed</span><span class="conf r">Reported</span><span class="conf i">Inferred</span></div>'+
     '<p style="margin-top:10px">Every link carries its source. Confirmed links come from company announcements; reported links from press reporting; inferred links are reasoned from the evidence cited and are drawn dashed on the map.</p>'+
@@ -133,7 +133,7 @@ function renderNode(id){
     '<p class="desc">'+esc(n.d)+'</p>';
   const chain=LONG[id];
   if(chain.length>2) h += '<button class="chainbtn" data-chain="'+id+'">Follow the deepest chain from here <em>'+(chain.length-1)+' steps</em></button>';
-  if(n.k!=='lab') h += '<div class="shared">'+labDots(id)+'<span>'+(r.size? 'In the supply chain of '+r.size+' of 9 labs' : 'Not reached by any lab in this dataset')+'</span></div>';
+  if(n.k!=='lab') h += '<div class="shared">'+labDots(id)+'<span>'+(r.size? 'In the supply chain of '+r.size+' of '+LABS.length+' labs' : 'Not reached by any lab in this dataset')+'</span></div>';
   if(out.length){
     h += '<h2>Supply lines from here</h2><div class="spokes" role="group" aria-label="Filter by dimension">'+
       '<button class="spoke" data-dim="" aria-pressed="'+(!dimFilter)+'" style="--c:var(--ink)">All <em>'+out.length+'</em></button>'+
