@@ -30,3 +30,9 @@ The app then loads Mapbox GL and the `mapboxStyle` you choose (satellite-streets
 The address bar tracks the journey, so any view can be shared or bookmarked:
 `https://where-is-ai.vercel.app/#/qwen/alicloud/litong/megaspeed?dim=chips`
 — the path is the breadcrumb trail of node ids, and `dim` is the optional filter. Back/forward buttons step through the journey.
+
+## Stock tickers
+`data/tickers.js` maps node ids to stock listings (`co` company, `rel` own/parent/operator/part, `l` = [symbol, exchange] in Google Finance codes, optional `st: 'proposed'` for an announced IPO that isn't trading yet). Tickers show in each stop's details, link to Google Finance, and are searchable. Ids not yet in the map are ignored, so listings for upcoming nodes can be added early.
+
+## Feedback
+The site's Feedback links open a pre-filled GitHub issue on this repo, including the page link and the stop the reader was looking at.

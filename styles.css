@@ -168,3 +168,26 @@ h2{font-size:13px;font-weight:700;color:var(--muted);margin:22px 0 8px;letter-sp
 .qr[aria-selected="true"],.qr:hover{background:var(--panel2)}
 .qnone{padding:12px;font-size:13px;color:var(--muted)}
 @media (max-width:760px){ .search{padding:8px 14px} .panel.collapsed .search{display:none} }
+
+/* ---------- stock tickers ---------- */
+.tick{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:12px;font-size:12.5px}
+.tk-lbl{color:var(--muted);font-weight:600}
+.tk-sym{font-weight:700;letter-spacing:.01em;padding:3px 8px;border-radius:7px;background:var(--panel2);color:var(--ink);text-decoration:none;white-space:nowrap}
+.tk-sym span{font-weight:500;color:var(--muted)}
+a.tk-sym:hover{background:var(--rule)}
+.tk-sym.pending{background:none;border:1.5px dashed var(--line)}
+.tk-x{color:var(--muted)}
+.tk-note{color:var(--muted);flex-basis:100%}
+.tk-note a{color:inherit}
+/* ---------- about & feedback ---------- */
+.fb{margin-top:22px;font-size:12.5px;color:var(--muted)}
+.fb a{color:var(--ink)}
+.about{margin-top:26px;padding-top:4px;border-top:1px solid var(--rule);font-size:13.5px}
+.about p{margin:0 0 10px;max-width:34em}
+.about .byline{font-weight:600}
+.about a{color:var(--ink)}
+.fbbtn{display:inline-block;font-weight:650;padding:7px 12px;border-radius:9px;border:1.5px solid var(--ink);text-decoration:none;margin-right:10px}
+.fbbtn:hover{background:var(--ink);color:var(--panel)!important}
+.fbnote{font-size:12px;color:var(--muted)}
+.about .credits{font-size:11.5px;color:var(--muted)}
+a.iconbtn{text-decoration:none;display:inline-block}

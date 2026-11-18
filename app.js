@@ -90,7 +90,7 @@ function kindColor(n){ return dimColor(KIND[n.k][0]); }
 
 function renderHead(){
   let h = '<div class="brand"><b>Supply Lines <span>· AI labs, traced</span></b>'+
-    (trail.length?'<span><button class="iconbtn" data-share>Share</button><button class="iconbtn" data-home>Start over</button></span>':'')+'</div>';
+    (trail.length?'<span><button class="iconbtn" data-share>Share</button><button class="iconbtn" data-home>Start over</button></span>':'<span><button class="iconbtn" data-about>About</button><a class="iconbtn" href="'+esc(feedbackURL(null))+'" target="_blank" rel="noopener noreferrer">Feedback</a></span>')+'</div>';
   if(trail.length){
     h += '<nav class="trail" aria-label="Journey">';
     trail.forEach((id,i)=>{ const n=byId[id];
@@ -117,7 +117,36 @@ function renderHome(){
     '<div class="legend-conf"><span class="conf c">Confirmed</span><span class="conf r">Reported</span><span class="conf i">Inferred</span></div>'+
     '<p style="margin-top:10px">Every link carries its source. Confirmed links come from company announcements; reported links from press reporting; inferred links are reasoned from the evidence cited and are drawn dashed on the map.</p>'+
     '<p>Power links from data centers, fabs and memory plants to nearby plants are inferred from proximity: the largest plants within 120 km on WRI’s Global Power Plant Database. They show what the local grid looks like, not a signed contract, unless marked confirmed.</p>'+
-    '<p>Pins marked “location approximate” stand in for sites that aren’t public. Deals current as of mid-November 2026.</p></div>';
+    '<p>Pins marked “location approximate” stand in for sites that aren’t public. Deals current as of mid-November 2026.</p></div>'+aboutHTML();
+}
+function aboutHTML(){
+  return '<section class="about" id="about" aria-labelledby="about-h"><h2 id="about-h">About</h2>'+
+    '<p>Supply Lines traces where frontier AI comes from: the clouds, chips, memory, fabs, lithography, materials, power and data behind each major lab, with a source on every link. The data is refreshed weekly from public reporting.</p>'+
+    '<p>Stock listings are shown for reference, linking to Google Finance. They aren’t investment advice.</p>'+
+    '<p class="byline">Made by Arun at intuslabs · <a href="mailto:arun@intuslabs.com">arun@intuslabs.com</a></p>'+
+    '<p><a class="fbbtn" href="'+esc(feedbackURL(null))+'" target="_blank" rel="noopener noreferrer">Send feedback</a><span class="fbnote">Opens a GitHub issue. Corrections with a source link are especially welcome.</span></p>'+
+    '<p class="credits">Basemap from Natural Earth; power plants from WRI’s Global Power Plant Database; map by MapLibre.</p></section>';
+}
+
+const EXCH={NASDAQ:'Nasdaq',NYSE:'NYSE',HKG:'Hong Kong',TPE:'Taiwan',KRX:'Korea',TYO:'Tokyo',SHA:'Shanghai',AMS:'Amsterdam',CPH:'Copenhagen',LON:'London',OSL:'Oslo'};
+const REL={own:'',parent:'Owned by ',operator:'Operated by ',part:'Part-owned by '};
+const TK=(typeof TICKERS==='object'&&TICKERS)||{};
+function tickerHTML(id){
+  const t=TK[id]; if(!t) return '';
+  const who=(REL[t.rel]||'')+(t.rel==='own'?'':t.co);
+  if(t.st==='proposed'){
+    return '<div class="tick"><span class="tk-lbl">Stock</span><span class="tk-sym pending">'+esc(t.l[0][0])+'</span><span class="tk-x">'+esc(EXCH[t.l[0][1]]||t.l[0][1])+' · not yet trading</span>'+
+      (t.note?'<span class="tk-note">'+esc(t.note)+(t.src?' · <a href="'+esc(t.src)+'" target="_blank" rel="noopener noreferrer">source ↗</a>':'')+'</span>':'')+'</div>';
+  }
+  return '<div class="tick"><span class="tk-lbl">Stock</span>'+t.l.map(([s,x])=>
+      '<a class="tk-sym" href="https://www.google.com/finance/quote/'+encodeURIComponent(s)+':'+x+'" target="_blank" rel="noopener noreferrer" title="Look up '+esc(s)+' on Google Finance">'+esc(s)+' <span>'+esc(EXCH[x]||x)+'</span> ↗</a>').join('')+
+    (who?'<span class="tk-note">'+esc(who)+'</span>':'')+'</div>';
+}
+function feedbackURL(id){
+  const n=id&&byId[id];
+  const title = n ? 'Feedback: '+n.n : 'Feedback';
+  const body = '**Page:** '+location.href+'\n'+(n?'**Stop:** '+n.n+' (`'+n.id+'`)\n':'')+'\n**What’s wrong, missing or confusing?**\n\n\n**A source link, if you have one:**\n';
+  return 'https://github.com/mathewar/Where-is-ai/issues/new?title='+encodeURIComponent(title)+'&body='+encodeURIComponent(body);
 }
 
 function renderNode(id){
@@ -130,7 +159,7 @@ function renderNode(id){
   let h = '<div class="kind" style="--c:'+kc+'">'+esc(KIND[n.k][1])+'</div>'+
     '<div class="title">'+esc(n.n)+'</div>'+
     '<div class="place">'+esc(n.p)+(n.a?'<span class="approx">location approximate</span>':'')+'</div>'+
-    '<p class="desc">'+esc(n.d)+'</p>';
+    '<p class="desc">'+esc(n.d)+'</p>'+tickerHTML(id);
   const chain=LONG[id];
   if(chain.length>2) h += '<button class="chainbtn" data-chain="'+id+'">Follow the deepest chain from here <em>'+(chain.length-1)+' steps</em></button>';
   if(n.k!=='lab') h += '<div class="shared">'+labDots(id)+'<span>'+(r.size? 'In the supply chain of '+r.size+' of 9 labs' : 'Not reached by any lab in this dataset')+'</span></div>';
@@ -148,6 +177,7 @@ function renderNode(id){
   if(inc.length){
     h += '<h2>Also supplies</h2><div class="chips">'+[...new Map(inc.map(e=>[e.f,e])).values()].map(e=>'<button class="chip" data-go="'+e.f+'">'+esc(byId[e.f].n)+'</button>').join('')+'</div>';
   }
+  h += '<p class="fb">Something wrong or missing here? <a href="'+esc(feedbackURL(id))+'" target="_blank" rel="noopener noreferrer">Send feedback ↗</a></p>';
   body.innerHTML = h;
 }
 
@@ -191,17 +221,21 @@ const STATES={AL:'Alabama USA',AK:'Alaska USA',AZ:'Arizona USA',AR:'Arkansas USA
 const DOCS=NODES.map(n=>{
   const notes=OUT[n.id].concat(IN[n.id]).map(e=>e.note).join(' ');
   const place=n.p.replace(/\b([A-Z]{2})\b/g,(m,c)=>STATES[c]?m+' '+STATES[c]:m);
-  return {n, name:norm(n.n), place:norm(place), kind:norm(KIND[n.k][1]+' '+n.k), desc:norm(n.d), notes:norm(notes)};
+  const t=TK[n.id];
+  return {n, name:norm(n.n), place:norm(place), kind:norm(KIND[n.k][1]+' '+n.k), desc:norm(n.d), notes:norm(notes),
+    tick: t ? t.l.map(x=>norm(x[0])) : [], co: t ? norm(t.co) : '', own: !!(t && t.rel==='own')};
 });
 let qHits=[], qSel=0;
 function score(d, terms){
   let s=0;
   for(const t of terms){
     let best=0;
-    if(d.name===t) best=100;
+    if(d.tick.includes(t)) best=d.own?98:90;
+    else if(d.name===t) best=100;
     else if(d.name.startsWith(t)) best=60;
     else if(new RegExp('\\b'+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).test(d.name)) best=45;
     else if(d.name.includes(t)) best=30;
+    else if(d.co.includes(t)) best=26;
     else if(d.place.includes(t)) best=18;
     else if(d.kind.includes(t)) best=14;
     else if(d.desc.includes(t)) best=8;
@@ -224,7 +258,7 @@ function runSearch(){
   const terms=norm(raw).split(/\s+/).filter(Boolean);
   qHits=DOCS.map(d=>[d,score(d,terms)]).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,30).map(x=>x[0].n);
   qSel=0;
-  qRes.innerHTML = qHits.length ? qHits.map((n,i)=>'<button class="qr" role="option" data-q="'+n.id+'" aria-selected="'+(i===0)+'" style="--c:'+kindColor(n)+'"><i class="sw"></i><b>'+hl(n.n,terms)+'</b><span class="sub">'+esc(KIND[n.k][1])+' · '+hl(n.p,terms)+'</span></button>').join('')
+  qRes.innerHTML = qHits.length ? qHits.map((n,i)=>'<button class="qr" role="option" data-q="'+n.id+'" aria-selected="'+(i===0)+'" style="--c:'+kindColor(n)+'"><i class="sw"></i><b>'+hl(n.n,terms)+'</b><span class="sub">'+esc(KIND[n.k][1])+' · '+hl(n.p,terms)+(TK[n.id]&&TK[n.id].st!=='proposed'?' · '+hl(TK[n.id].l[0][0],terms):'')+'</span></button>').join('')
     : '<div class="qnone">No matches. Try a company, a place (“Texas”, “Taiwan”) or a type (“nuclear”, “HBM”).</div>';
   qRes.hidden=false;
 }
@@ -251,6 +285,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='/' && document.activeElemen
 document.addEventListener('click', ev => {
   if(ev.target.closest('a')) return;
   if(ev.target.closest('[data-share]')){ share(); return; }
+  if(ev.target.closest('[data-about]')){ expand(); const el=document.getElementById('about'); if(el) el.scrollIntoView({behavior:reduceMotion?'auto':'smooth',block:'start'}); return; }
   const t = ev.target.closest('[data-go],[data-jump],[data-home],[data-dim],[data-chain]');
   if(!t) return;
   if(t.hasAttribute('data-chain')){ const c=LONG[t.getAttribute('data-chain')]; trail=trail.slice(0,trail.indexOf(c[0])+1||undefined); if(!trail.length||trail[trail.length-1]!==c[0]) trail.push(c[0]); c.slice(1).forEach(x=>trail.push(x)); dimFilter=null; render(true); return; }
@@ -480,5 +515,6 @@ document.getElementById('projBtn').addEventListener('click',e=>{
 
 readURL();
 fromURL=true; render(false); fromURL=false;
+if(location.hash==='#about'){ const el=document.getElementById('about'); if(el) setTimeout(()=>el.scrollIntoView({block:'start'}),50); }
 initMap();
 })();
