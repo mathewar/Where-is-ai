@@ -142,11 +142,18 @@ h2{font-size:13px;font-weight:700;color:var(--muted);margin:22px 0 8px;letter-sp
 /* ---------- mobile ---------- */
 @media (max-width:760px){
   .panel{top:auto;left:0;right:0;bottom:0;width:auto;max-height:48%;border-radius:18px 18px 0 0;padding-bottom:env(safe-area-inset-bottom,0px);bottom:calc(-1 * env(safe-area-inset-bottom,0px))}
-  .handle{display:block;width:100%;height:18px;position:relative;flex:none}
+  .handle{display:block;width:100%;height:18px;position:relative;flex:none;-webkit-tap-highlight-color:transparent}
   .handle::after{content:"";position:absolute;left:50%;top:7px;width:38px;height:4px;border-radius:2px;background:var(--line);transform:translateX(-50%)}
   .panel-head{padding-top:0}
   .panel.collapsed .panel-body{display:none}
-  .panel.collapsed{max-height:none}
+  .panel{max-height:none;height:48vh;height:48dvh;transition:height .28s cubic-bezier(.2,.8,.2,1),border-radius .28s}
+  .panel.full{height:calc(100vh - 8px);height:calc(100dvh - 8px - env(safe-area-inset-top,0px))}
+  .panel.collapsed{height:auto}
+  .panel.dragging{transition:none}
+  .handle{height:22px;touch-action:none;cursor:grab}
+  .handle::after{top:9px}
+  .panel .brand{touch-action:none}
+  body.sheet-full .tools{display:none}
   h1{font-size:25px;margin-top:12px}
   .title{font-size:23px}
   .tools{top:calc(10px + env(safe-area-inset-top,0px));right:10px}

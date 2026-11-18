@@ -78,8 +78,64 @@ function home(){ trail=[]; dimFilter=null; render(true); }
 function setDim(d){ dimFilter = dimFilter===d ? null : d; render(true); }
 window.__nav = {go, jump, home, setDim};
 
-function expand(){ panel.classList.remove('collapsed'); }
-document.getElementById('handle').addEventListener('click',()=>{ panel.classList.toggle('collapsed'); setTimeout(()=>fitView(), 50); });
+// ---------- mobile bottom sheet: collapsed / half / full, draggable ----------
+const handleEl=document.getElementById('handle');
+let sheet='half';
+function setSheet(s, refit){
+  sheet=s;
+  panel.classList.toggle('full', s==='full');
+  panel.classList.toggle('collapsed', s==='collapsed');
+  document.body.classList.toggle('sheet-full', s==='full');
+  panel.style.height='';
+  handleEl.setAttribute('aria-label', s==='full' ? 'Shrink panel' : 'Expand panel');
+  if(refit!==false && s!=='full') setTimeout(()=>fitView(), 320);
+}
+function expand(){ if(sheet==='collapsed') setSheet('half', false); }
+(function(){
+  let drag=null;
+  const H=()=>window.innerHeight;
+  const sizes=()=>{ const head=panel.querySelector('.panel-head').getBoundingClientRect().height+22; return {collapsed:head, half:Math.round(H()*0.48), full:H()-8}; };
+  function start(e){
+    if(!isMobile() || e.button>0) return;
+    const t=e.target;
+    if(!(t===handleEl || (t.closest('.brand') && !t.closest('button,a,input')))) return;
+    drag={y:e.clientY, t:performance.now(), h:panel.getBoundingClientRect().height, moved:false, id:e.pointerId};
+    try{ t.setPointerCapture(e.pointerId); }catch(_){}
+  }
+  function move(e){
+    if(!drag || e.pointerId!==drag.id) return;
+    const dy=e.clientY-drag.y;
+    if(!drag.moved){ if(Math.abs(dy)<6) return; drag.moved=true; panel.classList.add('dragging'); panel.classList.remove('collapsed'); document.body.classList.remove('sheet-full'); }
+    const s=sizes();
+    panel.style.height=Math.max(s.collapsed, Math.min(s.full, drag.h-dy))+'px';
+    e.preventDefault();
+  }
+  function end(e){
+    if(!drag || e.pointerId!==drag.id) return;
+    const d=drag; drag=null; panel.classList.remove('dragging');
+    if(!d.moved){ // tap: step the sheet up, or back down from full
+      if(e.target===handleEl) setSheet(sheet==='half' ? 'full' : 'half');
+      return;
+    }
+    const s=sizes(), h=panel.getBoundingClientRect().height, v=(e.clientY-d.y)/Math.max(1,performance.now()-d.t);
+    const order=['collapsed','half','full'];
+    let target;
+    if(v<-0.5) target=order[Math.min(2,order.indexOf(sheet)+1)];
+    else if(v>0.5) target=order[Math.max(0,order.indexOf(sheet)-1)];
+    else target=order.reduce((b,k)=>Math.abs(s[k]-h)<Math.abs(s[b]-h)?k:b,'half');
+    // let the height animate from where the finger left it to the snap point
+    panel.style.height=h+'px'; void panel.offsetHeight;
+    sheet=target;
+    panel.style.height=(target==='collapsed' ? s.collapsed : s[target])+'px';
+    setTimeout(()=>setSheet(target), 280);
+  }
+  panel.addEventListener('pointerdown',start);
+  panel.addEventListener('pointermove',move,{passive:false});
+  panel.addEventListener('pointerup',end);
+  panel.addEventListener('pointercancel',end);
+  handleEl.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); setSheet(sheet==='full'?'half':'full'); } });
+  window.addEventListener('resize',()=>{ if(!isMobile() && sheet!=='half') setSheet('half', false); });
+})();
 
 // ---------- panel rendering ----------
 function labDots(id){
@@ -262,7 +318,7 @@ function runSearch(){
     : '<div class="qnone">No matches. Try a company, a place (“Texas”, “Taiwan”) or a type (“nuclear”, “HBM”).</div>';
   qRes.hidden=false;
 }
-function pick(id){ qIn.value=''; qRes.hidden=true; qIn.blur(); go(id); }
+function pick(id){ qIn.value=''; qRes.hidden=true; qIn.blur(); if(sheet==='full') setSheet('half', false); go(id); }
 function moveSel(d){
   if(!qHits.length) return;
   qSel=(qSel+d+qHits.length)%qHits.length;
