@@ -42,6 +42,20 @@ LABS.forEach(lab => {
   while(q.length){ const x=q.shift(); reach[x].add(lab); OUT[x].forEach(e => { if(!seen.has(e.t)){ seen.add(e.t); q.push(e.t);} }); }
 });
 
+// ---------- tours (data/tours.js) ----------
+const EDGE = {}; EDGES.forEach(([f,t,d,c,note,src]) => { EDGE[f+'>'+t] = {f,t,d,c,note,src:src||[]}; });
+const fillT = s => String(s||'').replace(/\{\{labs\}\}/g, LABS.length).replace(/\{\{reach:([^}]+)\}\}/g, (m,id) => reach[id] ? reach[id].size : '');
+const pathEdges = p => p.slice(1).map((id,j) => EDGE[p[j]+'>'+id]).filter(Boolean);
+// a tour whose stops or links no longer exist in the graph is skipped rather than shown broken
+const tourOK = t => t && Array.isArray(t.stops) && t.stops.length>=3 && t.stops.every(s => byId[s.at] && Array.isArray(s.path) && s.path.length && s.path.every((id,j) => byId[id] && (!j || EDGE[s.path[j-1]+'>'+id])));
+const WRITTEN = (typeof TOURS!=='undefined' && Array.isArray(TOURS) ? TOURS : []).filter(tourOK);
+function getTour(id){ return id ? WRITTEN.find(t => t.id===id) || null : null; }
+let lastTour = null; try{ lastTour = localStorage.getItem('sl-last-tour'); }catch(e){}
+function pickTour(){
+  const pool = WRITTEN.map(t => t.id).filter(id => id!==lastTour);
+  return pool.length ? pool[Math.floor(Math.random()*pool.length)] : null;
+}
+
 // ---------- geometry ----------
 function unwrap(lon, ref){ return lon + 360*Math.round((ref-lon)/360); }
 function gc(a, b, n){
@@ -65,6 +79,8 @@ let markers = [];
 let plantsOn = true;
 let activeFuels = new Set(PLANTS.fuels.map((_,i)=>i));
 let globe = false;
+let tour = null;          // {t: tour, i: stop index; i === stops.length is the closing card}
+let autoT = null;
 
 const panel = document.getElementById('panel');
 const head = document.getElementById('head');
@@ -72,11 +88,32 @@ const body = document.getElementById('body');
 
 // ---------- navigation ----------
 function current(){ return trail.length ? trail[trail.length-1] : null; }
-function go(id){ if(current()!==id){ const i=trail.indexOf(id); if(i>=0) trail=trail.slice(0,i+1); else trail.push(id);} dimFilter=null; expand(); render(true); }
+function go(id){ if(tour){ leaveTour(); trail=[]; } if(current()!==id){ const i=trail.indexOf(id); if(i>=0) trail=trail.slice(0,i+1); else trail.push(id);} dimFilter=null; expand(); render(true); }
 function jump(i){ trail=trail.slice(0,i+1); dimFilter=null; render(true); }
 function home(){ trail=[]; dimFilter=null; render(true); }
 function setDim(d){ dimFilter = dimFilter===d ? null : d; render(true); }
-window.__nav = {go, jump, home, setDim};
+function leaveTour(){ stopAuto(); tour=null; }
+function startTour(id){
+  const t = getTour(id || pickTour()); if(!t) return;
+  stopAuto(); tour = {t, i:0}; trail=[]; dimFilter=null; lastTour = t.id;
+  try{ localStorage.setItem('sl-last-tour', t.id); }catch(e){}
+  expand(); render(true);
+}
+function tourTo(i){ if(!tour) return; const N=tour.t.stops.length; i=Math.max(0, Math.min(N, i)); if(i===tour.i) return; tour.i=i; if(i>=N) stopAuto(); render(true); }
+function exitTour(explore){
+  const t = tour; leaveTour(); dimFilter=null;
+  if(explore && t){ const s=t.t.stops[Math.min(t.i, t.t.stops.length-1)], k=s.path.indexOf(s.at);
+    trail = byId[s.path[0]].k==='lab' && k>=0 ? s.path.slice(0, k+1) : [s.at]; }
+  else trail=[];
+  render(true);
+}
+function stopAuto(){ if(autoT){ clearInterval(autoT); autoT=null; } }
+function toggleAuto(){
+  if(autoT){ stopAuto(); render(false); return; }
+  autoT = setInterval(() => { if(!tour || tour.i >= tour.t.stops.length-1){ const end=tour; stopAuto(); if(end) tourTo(end.i+1); return; } tourTo(tour.i+1); }, 9000);
+  render(false);
+}
+window.__nav = {go, jump, home, setDim, startTour, tourTo, exitTour};
 
 // ---------- mobile bottom sheet: collapsed / half / full, draggable ----------
 const handleEl=document.getElementById('handle');
@@ -165,6 +202,8 @@ function renderHome(){
   body.innerHTML =
     '<h1>Where frontier AI comes from</h1>'+
     '<p class="lede">Pick a lab or search above, then follow its supply lines out across the map: compute, chips, memory, fabs, lithography, materials, power and data. Every stop opens its own suppliers, down to the power plants and uranium mines.</p>'+
+    '<div class="tourcta"><button class="tourbtn" data-tour="">▶ Start a tour</button><span>A short, sourced story from the map. A different one each time.</span></div>'+
+    (WRITTEN.length ? '<div class="chips tourpick" aria-label="Choose a tour">'+WRITTEN.map(t=>'<button class="chip" data-tour="'+esc(t.id)+'">'+esc(fillT(t.title))+'</button>').join('')+'</div>' : '')+
     '<h2>United States & UK</h2>'+lb(us)+
     '<h2>China</h2>'+lb(cn)+
     '<h2>Chokepoints every lab runs through</h2>'+
@@ -237,17 +276,50 @@ function renderNode(id){
   body.innerHTML = h;
 }
 
-// ---------- shareable URL: #/lab/stop/stop?dim=chips ----------
+// ---------- tour panel ----------
+function renderTourHead(){
+  const t=tour.t, i=tour.i;
+  head.innerHTML = '<div class="brand"><b>Supply Lines <span>· guided tour</span></b><span><button class="iconbtn" data-share>Share</button><button class="iconbtn" data-tourexit>Exit tour</button></span></div>'+
+    '<div class="tprog" role="group" aria-label="Tour stops">'+t.stops.map((s,k)=>'<button class="tdot'+(k===i?' cur':(k<i?' done':''))+'" data-tourgo="'+k+'" aria-label="Stop '+(k+1)+': '+esc(byId[s.at].n)+'"'+(k===i?' aria-current="step"':'')+'></button>').join('')+
+    '<button class="tdot fin'+(i>=t.stops.length?' cur':'')+'" data-tourgo="'+t.stops.length+'" aria-label="Wrap-up"></button></div>';
+}
+function renderTour(){
+  const t=tour.t, i=tour.i, N=t.stops.length;
+  let h = '<div class="tkicker">'+esc(t.kicker||'Tour')+'</div><h1 class="ttitle">'+esc(fillT(t.title))+'</h1>';
+  if(i<N){
+    const s=t.stops[i], n=byId[s.at], es=pathEdges(s.path);
+    if(i===0) h += '<p class="tlede">'+esc(fillT(t.lede))+'</p>';
+    h += '<section class="tstop" aria-live="polite"><div class="tnum">Stop '+(i+1)+' of '+N+'</div>'+
+      '<div class="kind" style="--c:'+kindColor(n)+'">'+esc(KIND[n.k][1])+'</div><div class="title">'+esc(n.n)+'</div>'+
+      '<div class="place">'+esc(n.p)+(n.a?'<span class="approx">location approximate</span>':'')+'</div>'+
+      '<p class="ttext">'+esc(fillT(s.text))+'</p>'+
+      (es.length ? '<div class="tlinks-h">The links behind this stop</div><div class="rows tlinks">'+es.map(e=>'<div class="row" style="--c:'+dimColor(e.d)+'"><span class="bar"></span><div class="rmain"><span class="rn">'+esc(byId[e.f].n)+' → '+esc(byId[e.t].n)+'</span>'+(e.note?'<span class="note">'+esc(e.note)+'</span>':'')+'</div><span class="conf '+e.c+'">'+CONF[e.c]+'</span>'+srcLinks(e.src)+'</div>').join('')+'</div>' : '')+
+      '</section>';
+  } else {
+    h += '<section class="tstop tend" aria-live="polite"><p class="ttext">'+esc(fillT(t.close))+'</p></section>';
+  }
+  h += '<div class="tnav"><button class="tnb" data-tourstep="-1"'+(i===0?' disabled':'')+'>← Back</button>'+
+    (i<N ? '<button class="tnb" data-tourauto aria-pressed="'+(!!autoT)+'">'+(autoT?'❚❚ Pause':'▶ Autoplay')+'</button><button class="tnb primary" data-tourstep="1">'+(i===N-1?'Wrap up →':'Next →')+'</button>'
+         : '<button class="tnb primary" data-tour="">Another tour</button>')+'</div>'+
+    '<button class="chainbtn" data-tourexit="explore">'+(i<N ? 'Explore the map from this stop' : 'Explore the map')+' <em>ends the tour</em></button>'+
+    '<p class="fine tfine">Arrow keys step through the tour; Esc leaves it. Every claim links to its source; dashed lines on the map are reported or inferred, not confirmed.</p>';
+  body.innerHTML = h;
+}
+
+// ---------- shareable URL: #/lab/stop/stop?dim=chips, or #/tour/<id>/<stop> ----------
 let fromURL=false;
-function stateHash(){ return trail.length ? '#/'+trail.map(encodeURIComponent).join('/')+(dimFilter?'?dim='+dimFilter:'') : ''; }
+function stateHash(){ if(tour) return '#/tour/'+encodeURIComponent(tour.t.id)+'/'+(tour.i+1); return trail.length ? '#/'+trail.map(encodeURIComponent).join('/')+(dimFilter?'?dim='+dimFilter:'') : ''; }
 function writeURL(){
   const h=stateHash();
-  document.title = trail.length ? byId[current()].n+' · Supply Lines' : 'Supply Lines · where frontier AI comes from';
+  document.title = tour ? fillT(tour.t.title)+' · Supply Lines' : trail.length ? byId[current()].n+' · Supply Lines' : 'Supply Lines · where frontier AI comes from';
   if(fromURL || location.hash===h || (!h && !location.hash)) return;
   try{ history.pushState(null,'',h || location.pathname+location.search); }catch(e){}
 }
 function readURL(){
   const m=(location.hash||'').match(/^#\/([^?]*)(?:\?(.*))?$/);
+  stopAuto(); tour=null;
+  const tm = m && m[1].match(/^tour\/([^/]+)(?:\/(\d+))?$/);
+  if(tm){ const t=getTour(decodeURIComponent(tm[1])); if(t){ tour={t, i:Math.max(0, Math.min(t.stops.length, (parseInt(tm[2],10)||1)-1))}; trail=[]; dimFilter=null; return; } }
   trail = m ? m[1].split('/').map(decodeURIComponent).filter(id=>byId[id]) : [];
   const d = m && m[2] ? new URLSearchParams(m[2]).get('dim') : null;
   dimFilter = d && DIMS[d] ? d : null;
@@ -263,9 +335,8 @@ async function share(){
 
 function render(move){
   writeURL();
-  renderHead();
-  const id = current();
-  if(id) renderNode(id); else renderHome();
+  if(tour){ renderTourHead(); renderTour(); }
+  else { renderHead(); const id = current(); if(id) renderNode(id); else renderHome(); }
   body.scrollTop = 0;
   if(mapReady){ drawMap(); if(move) fitView(); }
 }
@@ -336,12 +407,27 @@ qIn.addEventListener('keydown',e=>{
 qRes.addEventListener('mousedown',e=>e.preventDefault());
 qRes.addEventListener('click',e=>{ const b=e.target.closest('[data-q]'); if(b) pick(b.dataset.q); });
 document.addEventListener('click',e=>{ if(!e.target.closest('.search')) qRes.hidden=true; });
+document.addEventListener('keydown',e=>{
+  if(!tour || /input|textarea|select/i.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+  if(e.key==='ArrowRight'){ e.preventDefault(); stopAuto(); tourTo(tour.i+1); }
+  else if(e.key==='ArrowLeft'){ e.preventDefault(); stopAuto(); tourTo(tour.i-1); }
+  else if(e.key==='Escape'){ e.preventDefault(); exitTour(false); }
+});
 document.addEventListener('keydown',e=>{ if(e.key==='/' && document.activeElement!==qIn && !/input|textarea/i.test(document.activeElement.tagName)){ e.preventDefault(); qIn.focus(); } });
 
 document.addEventListener('click', ev => {
   if(ev.target.closest('a')) return;
   if(ev.target.closest('[data-share]')){ share(); return; }
   if(ev.target.closest('[data-about]')){ expand(); const el=document.getElementById('about'); if(el) el.scrollIntoView({behavior:reduceMotion?'auto':'smooth',block:'start'}); return; }
+  const tb = ev.target.closest('[data-tour],[data-tourstep],[data-tourgo],[data-tourexit],[data-tourauto]');
+  if(tb){
+    if(tb.disabled) return;
+    if(tb.hasAttribute('data-tour')) startTour(tb.getAttribute('data-tour')||null);
+    else if(tb.hasAttribute('data-tourauto')) toggleAuto();
+    else if(tb.hasAttribute('data-tourexit')) exitTour(tb.getAttribute('data-tourexit')==='explore');
+    else if(tour){ stopAuto(); tourTo(tb.hasAttribute('data-tourstep') ? tour.i + (+tb.getAttribute('data-tourstep')) : +tb.getAttribute('data-tourgo')); }
+    return;
+  }
   const t = ev.target.closest('[data-go],[data-jump],[data-home],[data-dim],[data-chain]');
   if(!t) return;
   if(t.hasAttribute('data-chain')){ const c=LONG[t.getAttribute('data-chain')]; trail=trail.slice(0,trail.indexOf(c[0])+1||undefined); if(!trail.length||trail[trail.length-1]!==c[0]) trail.push(c[0]); c.slice(1).forEach(x=>trail.push(x)); dimFilter=null; render(true); return; }
@@ -454,8 +540,23 @@ function makeMarker(n, cls, color, label, order){
   m._order=order; markers.push(m); return m;
 }
 
+function tourLines(pairs){ return fc(pairs.map(e=>({type:'Feature',properties:{col:dimColor(e.d),conf:e.c},geometry:{type:'LineString',coordinates:gc(byId[e.f].c,byId[e.t].c)}}))); }
+function drawTourMap(){
+  const t=tour.t, N=t.stops.length, i=tour.i, cur=i<N ? t.stops[i] : null;
+  const before = t.stops.slice(0, cur ? i : N).flatMap(s=>pathEdges(s.path));
+  map.getSource('trail').setData(tourLines(before));
+  map.getSource('spider').setData(tourLines(cur ? pathEdges(cur.path) : []));
+  const shown=new Set();
+  if(cur){
+    const n=byId[cur.at]; makeMarker(n,'cur',kindColor(n),n.n,0); shown.add(cur.at);
+    cur.path.forEach((id,k)=>{ if(shown.has(id)) return; shown.add(id); makeMarker(byId[id],'tgt',kindColor(byId[id]),byId[id].n,10+k); });
+  }
+  t.stops.slice(0, cur ? i : N).forEach((s,k)=>{ if(shown.has(s.at)) return; shown.add(s.at); makeMarker(byId[s.at],'past',css('--ink'),(k+1)+'. '+byId[s.at].n,30+k); });
+  setTimeout(declutter,0);
+}
 function drawMap(){
   markers.forEach(m=>m.remove()); markers=[];
+  if(tour){ drawTourMap(); return; }
   map.getSource('spider').setData(spiderData());
   map.getSource('trail').setData(trailData());
   const id=current();
@@ -485,23 +586,29 @@ function declutter(){
 
 function padding(){
   const W=innerWidth,H=innerHeight;
-  if(isMobile()){ const h=Math.min(panel.getBoundingClientRect().height,H*0.5); return {top:60,bottom:Math.min(h+16,H-200),left:24,right:24}; }
+  if(isMobile()){ const h=Math.min(panel.getBoundingClientRect().height,H*0.5); return {top:60,bottom:Math.min(h+16,H-200),left:24,right:tour?110:24}; }
   return {top:80,bottom:50,left:Math.min(392+16+50,W-300),right:current()?110:170};
 }
 function fitView(){
   if(!map) return;
-  const id=current(); const pad=padding(); const opt={padding:pad,duration:reduceMotion?0:1600,essential:true};
+  const id=tour ? null : current(); const pad=padding(); const opt={padding:pad,duration:reduceMotion?0:(tour?2200:1600),essential:true};
   let pts, ref;
-  if(!id){ pts=LABS.map(l=>byId[l].c); ref=170; }
+  if(tour){
+    const t=tour.t, s=t.stops[tour.i];
+    const ids = s ? s.path : [...new Set(t.stops.flatMap(x=>x.path))];
+    pts = ids.map(x=>byId[x].c); ref = byId[s ? s.at : ids[0]].c[0];
+    if(pts.length===1){ map.flyTo(Object.assign({},opt,{center:pts[0],zoom:5})); return; }
+  }
+  else if(!id){ pts=LABS.map(l=>byId[l].c); ref=170; }
   else { ref=byId[id].c[0]; pts=[byId[id].c].concat(OUT[id].filter(e=>!dimFilter||e.d===dimFilter).map(e=>byId[e.t].c)); }
   if(pts.length===1){ map.flyTo(Object.assign({},opt,{center:pts[0],zoom:6.5})); return; }
   let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
   pts.forEach(p=>{ const x=unwrap(p[0],ref); minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]); });
-  if(globe && maxX-minX>110){ map.flyTo(Object.assign({},opt,{center:id?byId[id].c:[150,35],zoom:isMobile()?0.6:1.3})); return; }
+  if(globe && maxX-minX>110){ map.flyTo(Object.assign({},opt,{center:tour?pts[0]:id?byId[id].c:[150,35],zoom:isMobile()?0.6:1.3})); return; }
   let cam=null; try{ cam=map.cameraForBounds([[minX,minY],[maxX,maxY]],{padding:pad,maxZoom:7.5}); }catch(e){}
   if(cam && cam.zoom>=0.35){ map.fitBounds([[minX,minY],[maxX,maxY]],Object.assign({},opt,{maxZoom:7.5})); }
   else { // too spread out for this screen: keep the current stop in view, lines lead off toward the rest
-    const c = id?byId[id].c:[150,30];
+    const c = tour ? [ref, pts[0][1]] : id?byId[id].c:[150,30];
     map.flyTo(Object.assign({},opt,{center:[c[0],Math.max(-50,Math.min(60,c[1]))],zoom:0.5})); }
 }
 
