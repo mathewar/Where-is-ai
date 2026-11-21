@@ -79,8 +79,9 @@ let markers = [];
 let plantsOn = true;
 let activeFuels = new Set(PLANTS.fuels.map((_,i)=>i));
 let globe = false;
-let tour = null;          // {t: tour, i: stop index; i === stops.length is the closing card}
-let autoT = null;
+let tour = null;          // {t: tour, i}: i = -1 title card, 0..N-1 stops, N closing card
+let playing = false;      // documentary autoplay
+let capTimer = null, capSeq = 0;
 
 const panel = document.getElementById('panel');
 const head = document.getElementById('head');
@@ -92,26 +93,26 @@ function go(id){ if(tour){ leaveTour(); trail=[]; } if(current()!==id){ const i=
 function jump(i){ trail=trail.slice(0,i+1); dimFilter=null; render(true); }
 function home(){ trail=[]; dimFilter=null; render(true); }
 function setDim(d){ dimFilter = dimFilter===d ? null : d; render(true); }
-function leaveTour(){ stopAuto(); tour=null; }
+function leaveTour(){ clearTimeout(capTimer); capSeq++; playing=false; tour=null; }
 function startTour(id){
   const t = getTour(id || pickTour()); if(!t) return;
-  stopAuto(); tour = {t, i:0}; trail=[]; dimFilter=null; lastTour = t.id;
+  clearTimeout(capTimer); tour = {t, i:-1}; trail=[]; dimFilter=null; lastTour = t.id; playing = !reduceMotion;
   try{ localStorage.setItem('sl-last-tour', t.id); }catch(e){}
-  expand(); render(true);
+  render(true);
 }
-function tourTo(i){ if(!tour) return; const N=tour.t.stops.length; i=Math.max(0, Math.min(N, i)); if(i===tour.i) return; tour.i=i; if(i>=N) stopAuto(); render(true); }
+function tourTo(i){ if(!tour) return; const N=tour.t.stops.length; i=Math.max(-1, Math.min(N, i)); if(i===tour.i) return; tour.i=i; if(i>=N) playing=false; render(true); }
 function exitTour(explore){
   const t = tour; leaveTour(); dimFilter=null;
-  if(explore && t){ const s=t.t.stops[Math.min(t.i, t.t.stops.length-1)], k=s.path.indexOf(s.at);
+  if(explore && t && t.i>=0){ const s=t.t.stops[Math.min(t.i, t.t.stops.length-1)], k=s.path.indexOf(s.at);
     trail = byId[s.path[0]].k==='lab' && k>=0 ? s.path.slice(0, k+1) : [s.at]; }
   else trail=[];
   render(true);
 }
-function stopAuto(){ if(autoT){ clearInterval(autoT); autoT=null; } }
 function toggleAuto(){
-  if(autoT){ stopAuto(); render(false); return; }
-  autoT = setInterval(() => { if(!tour || tour.i >= tour.t.stops.length-1){ const end=tour; stopAuto(); if(end) tourTo(end.i+1); return; } tourTo(tour.i+1); }, 9000);
-  render(false);
+  if(!tour) return;
+  playing = !playing;
+  if(tour.i>=tour.t.stops.length && playing){ tourTo(-1); return; }
+  clearTimeout(capTimer); refreshCtl(); if(playing) schedule();
 }
 window.__nav = {go, jump, home, setDim, startTour, tourTo, exitTour};
 
@@ -276,39 +277,74 @@ function renderNode(id){
   body.innerHTML = h;
 }
 
-// ---------- tour panel ----------
-function renderTourHead(){
-  const t=tour.t, i=tour.i;
-  head.innerHTML = '<div class="brand"><b>Supply Lines <span>· guided tour</span></b><span><button class="iconbtn" data-share>Share</button><button class="iconbtn" data-tourexit>Exit tour</button></span></div>'+
-    '<div class="tprog" role="group" aria-label="Tour stops">'+t.stops.map((s,k)=>'<button class="tdot'+(k===i?' cur':(k<i?' done':''))+'" data-tourgo="'+k+'" aria-label="Stop '+(k+1)+': '+esc(byId[s.at].n)+'"'+(k===i?' aria-current="step"':'')+'></button>').join('')+
-    '<button class="tdot fin'+(i>=t.stops.length?' cur':'')+'" data-tourgo="'+t.stops.length+'" aria-label="Wrap-up"></button></div>';
-}
-function renderTour(){
+// ---------- tour: documentary captions over the map ----------
+const appEl = document.getElementById('app');
+const cap = document.createElement('div'); cap.id='cap'; cap.className='cap'; appEl.appendChild(cap);
+const readMs = text => Math.max(6000, String(text).split(/\s+/).length/3.2*1000 + 2000);   // ~190 wpm plus a beat
+function capHTML(){
   const t=tour.t, i=tour.i, N=t.stops.length;
-  let h = '<div class="tkicker">'+esc(t.kicker||'Tour')+'</div><h1 class="ttitle">'+esc(fillT(t.title))+'</h1>';
-  if(i<N){
-    const s=t.stops[i], n=byId[s.at], es=pathEdges(s.path);
-    if(i===0) h += '<p class="tlede">'+esc(fillT(t.lede))+'</p>';
-    h += '<section class="tstop" aria-live="polite"><div class="tnum">Stop '+(i+1)+' of '+N+'</div>'+
-      '<div class="kind" style="--c:'+kindColor(n)+'">'+esc(KIND[n.k][1])+'</div><div class="title">'+esc(n.n)+'</div>'+
-      '<div class="place">'+esc(n.p)+(n.a?'<span class="approx">location approximate</span>':'')+'</div>'+
-      '<p class="ttext">'+esc(fillT(s.text))+'</p>'+
-      (es.length ? '<div class="tlinks-h">The links behind this stop</div><div class="rows tlinks">'+es.map(e=>'<div class="row" style="--c:'+dimColor(e.d)+'"><span class="bar"></span><div class="rmain"><span class="rn">'+esc(byId[e.f].n)+' → '+esc(byId[e.t].n)+'</span>'+(e.note?'<span class="note">'+esc(e.note)+'</span>':'')+'</div><span class="conf '+e.c+'">'+CONF[e.c]+'</span>'+srcLinks(e.src)+'</div>').join('')+'</div>' : '')+
-      '</section>';
+  let h = '<button class="cap-x" data-tourexit aria-label="Close tour">✕</button><div class="cap-in">';
+  if(i<0){
+    h += '<div class="cap-card"><div class="cap-kicker">'+esc(t.kicker||'Tour')+'</div><h2 class="cap-h">'+esc(fillT(t.title))+'</h2><p class="cap-lede">'+esc(fillT(t.lede))+'</p></div>';
+  } else if(i>=N){
+    h += '<div class="cap-card"><div class="cap-kicker">'+esc(t.kicker||'Tour')+'</div><p class="cap-close">'+esc(fillT(t.close))+'</p>'+
+      '<div class="cap-endb"><button class="cap-btn primary" data-tour="">Another tour</button><button class="cap-btn" data-tourexit="explore">Explore the map</button><button class="cap-btn" data-tourauto>Watch again</button></div></div>';
   } else {
-    h += '<section class="tstop tend" aria-live="polite"><p class="ttext">'+esc(fillT(t.close))+'</p></section>';
+    const s=t.stops[i], n=byId[s.at], es=pathEdges(s.path);
+    h += '<div class="cap-low"><div class="cap-strap" style="--c:'+kindColor(n)+'"><b>'+esc(n.n)+'</b><span>'+esc(n.p)+(n.a?' · location approximate':'')+'</span></div>'+
+      '<p class="cap-text">'+esc(fillT(s.text))+'</p>'+
+      (es.length ? '<div class="cap-src">'+es.map(e=>'<span class="cap-conf '+e.c+'">'+CONF[e.c]+'</span>'+(SRC[e.src[0]] ? '<a href="'+esc(SRC[e.src[0]].u)+'" target="_blank" rel="noopener noreferrer">'+esc(SRC[e.src[0]].t)+' ↗</a>' : '')+(e.src.length>1?'<span class="cap-more">+'+(e.src.length-1)+'</span>':'')).join('<span class="cap-dot">·</span>')+'</div>' : '')+
+      '</div>';
   }
-  h += '<div class="tnav"><button class="tnb" data-tourstep="-1"'+(i===0?' disabled':'')+'>← Back</button>'+
-    (i<N ? '<button class="tnb" data-tourauto aria-pressed="'+(!!autoT)+'">'+(autoT?'❚❚ Pause':'▶ Autoplay')+'</button><button class="tnb primary" data-tourstep="1">'+(i===N-1?'Wrap up →':'Next →')+'</button>'
-         : '<button class="tnb primary" data-tour="">Another tour</button>')+'</div>'+
-    '<button class="chainbtn" data-tourexit="explore">'+(i<N ? 'Explore the map from this stop' : 'Explore the map')+' <em>ends the tour</em></button>'+
-    '<p class="fine tfine">Arrow keys step through the tour; Esc leaves it. Every claim links to its source; dashed lines on the map are reported or inferred, not confirmed.</p>';
-  body.innerHTML = h;
+  return h + ctlHTML() + '</div>';
+}
+function ctlHTML(){
+  const t=tour.t, i=tour.i, N=t.stops.length;
+  return '<div class="cap-ctl"><div class="cap-bar" role="group" aria-label="Tour stops">'+t.stops.map((s,k)=>'<button class="'+(k<i?'done':(k===i?'cur':''))+'" data-tourgo="'+k+'" aria-label="Stop '+(k+1)+': '+esc(byId[s.at].n)+'"><b></b></button>').join('')+'</div>'+
+    '<div class="cap-btns"><button class="cap-ic" data-tourstep="-1" aria-label="Previous"'+(i<0?' disabled':'')+'>‹</button>'+
+    '<button class="cap-ic play" data-tourauto aria-label="'+(playing?'Pause':'Play')+'">'+(playing?'❚❚':'▶')+'</button>'+
+    '<button class="cap-ic" data-tourstep="1" aria-label="Next"'+(i>=N?' disabled':'')+'>›</button>'+
+    '<span class="cap-count">'+esc(fillT(t.title))+(i>=0&&i<N?' · '+(i+1)+' of '+N:'')+'</span>'+
+    '<button class="cap-link" data-share>Share</button>'+(i>=0&&i<N?'<button class="cap-link" data-tourexit="explore">Explore from here</button>':'')+'</div></div>';
+}
+function refreshCtl(){ const c=cap.querySelector('.cap-ctl'); if(c){ c.outerHTML=ctlHTML(); } if(playing) runBar(); }
+function runBar(){
+  const b=cap.querySelector('.cap-bar .cur b'); if(!b || !tour) return;
+  const t=tour.t, i=tour.i, ms=readMs(fillT(i<0 ? t.title+' '+t.lede : t.stops[i].text));
+  b.style.transition='none'; b.style.width='0%'; void b.offsetWidth;
+  b.style.transition='width '+ms+'ms linear'; b.style.width='100%';
+}
+function schedule(){
+  clearTimeout(capTimer); if(!playing || !tour) return;
+  const t=tour.t, i=tour.i, N=t.stops.length; if(i>=N){ playing=false; refreshCtl(); return; }
+  const ms=readMs(fillT(i<0 ? t.title+' '+t.lede : t.stops[i].text));
+  runBar(); capTimer=setTimeout(()=>tourTo(i+1), ms);
+}
+function setLineOpacity(o, ms){
+  if(!mapReady) return;
+  ['spider-solid','spider-dash'].forEach(l=>{ map.setPaintProperty(l,'line-opacity-transition',{duration:ms,delay:0}); map.setPaintProperty(l,'line-opacity',o); });
+}
+// fade the caption out, fly, then bring the caption and the stop's links in together when the camera lands
+function playStep(move){
+  const seq=++capSeq; clearTimeout(capTimer);
+  document.body.classList.add('touring');
+  const i=tour.i, N=tour.t.stops.length;
+  cap.classList.add('out');
+  cap.classList.toggle('is-card', i<0 || i>=N);
+  const land=()=>{ if(seq!==capSeq || !tour) return; cap.innerHTML=capHTML(); void cap.offsetWidth; cap.classList.remove('out'); setLineOpacity(0.95, 900); schedule(); };
+  if(!mapReady){ setTimeout(land, 200); return; }
+  setLineOpacity(0, 0); drawMap();
+  if(!move){ setTimeout(land, 150); return; }
+  setTimeout(()=>{ if(seq!==capSeq) return;
+    let done=false; const fin=()=>{ if(done) return; done=true; setTimeout(land, 120); };
+    map.once('moveend', fin); setTimeout(fin, reduceMotion ? 300 : 3000);
+    fitView();
+  }, cap.innerHTML ? 350 : 0);
 }
 
 // ---------- shareable URL: #/lab/stop/stop?dim=chips, or #/tour/<id>/<stop> ----------
 let fromURL=false;
-function stateHash(){ if(tour) return '#/tour/'+encodeURIComponent(tour.t.id)+'/'+(tour.i+1); return trail.length ? '#/'+trail.map(encodeURIComponent).join('/')+(dimFilter?'?dim='+dimFilter:'') : ''; }
+function stateHash(){ if(tour) return '#/tour/'+encodeURIComponent(tour.t.id)+(tour.i>=0?'/'+(tour.i+1):''); return trail.length ? '#/'+trail.map(encodeURIComponent).join('/')+(dimFilter?'?dim='+dimFilter:'') : ''; }
 function writeURL(){
   const h=stateHash();
   document.title = tour ? fillT(tour.t.title)+' · Supply Lines' : trail.length ? byId[current()].n+' · Supply Lines' : 'Supply Lines · where frontier AI comes from';
@@ -317,9 +353,10 @@ function writeURL(){
 }
 function readURL(){
   const m=(location.hash||'').match(/^#\/([^?]*)(?:\?(.*))?$/);
-  stopAuto(); tour=null;
+  const was = tour; clearTimeout(capTimer); tour=null;
   const tm = m && m[1].match(/^tour\/([^/]+)(?:\/(\d+))?$/);
-  if(tm){ const t=getTour(decodeURIComponent(tm[1])); if(t){ tour={t, i:Math.max(0, Math.min(t.stops.length, (parseInt(tm[2],10)||1)-1))}; trail=[]; dimFilter=null; return; } }
+  if(tm){ const t=getTour(decodeURIComponent(tm[1])); if(t){ tour={t, i:tm[2] ? Math.max(0, Math.min(t.stops.length, parseInt(tm[2],10)-1)) : -1}; if(!was) playing=false; trail=[]; dimFilter=null; return; } }
+  playing=false;
   trail = m ? m[1].split('/').map(decodeURIComponent).filter(id=>byId[id]) : [];
   const d = m && m[2] ? new URLSearchParams(m[2]).get('dim') : null;
   dimFilter = d && DIMS[d] ? d : null;
@@ -335,8 +372,9 @@ async function share(){
 
 function render(move){
   writeURL();
-  if(tour){ renderTourHead(); renderTour(); }
-  else { renderHead(); const id = current(); if(id) renderNode(id); else renderHome(); }
+  if(tour){ playStep(move); return; }
+  if(document.body.classList.contains('touring')){ document.body.classList.remove('touring'); cap.innerHTML=''; cap.className='cap'; capSeq++; clearTimeout(capTimer); setLineOpacity(0.9, 0); }
+  renderHead(); const id = current(); if(id) renderNode(id); else renderHome();
   body.scrollTop = 0;
   if(mapReady){ drawMap(); if(move) fitView(); }
 }
@@ -409,8 +447,9 @@ qRes.addEventListener('click',e=>{ const b=e.target.closest('[data-q]'); if(b) p
 document.addEventListener('click',e=>{ if(!e.target.closest('.search')) qRes.hidden=true; });
 document.addEventListener('keydown',e=>{
   if(!tour || /input|textarea|select/i.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
-  if(e.key==='ArrowRight'){ e.preventDefault(); stopAuto(); tourTo(tour.i+1); }
-  else if(e.key==='ArrowLeft'){ e.preventDefault(); stopAuto(); tourTo(tour.i-1); }
+  if(e.key==='ArrowRight'){ e.preventDefault(); tourTo(tour.i+1); }
+  else if(e.key==='ArrowLeft'){ e.preventDefault(); tourTo(tour.i-1); }
+  else if(e.key===' ' && !/button|a/i.test(document.activeElement.tagName)){ e.preventDefault(); toggleAuto(); }
   else if(e.key==='Escape'){ e.preventDefault(); exitTour(false); }
 });
 document.addEventListener('keydown',e=>{ if(e.key==='/' && document.activeElement!==qIn && !/input|textarea/i.test(document.activeElement.tagName)){ e.preventDefault(); qIn.focus(); } });
@@ -425,7 +464,7 @@ document.addEventListener('click', ev => {
     if(tb.hasAttribute('data-tour')) startTour(tb.getAttribute('data-tour')||null);
     else if(tb.hasAttribute('data-tourauto')) toggleAuto();
     else if(tb.hasAttribute('data-tourexit')) exitTour(tb.getAttribute('data-tourexit')==='explore');
-    else if(tour){ stopAuto(); tourTo(tb.hasAttribute('data-tourstep') ? tour.i + (+tb.getAttribute('data-tourstep')) : +tb.getAttribute('data-tourgo')); }
+    else if(tour){ tourTo(tb.hasAttribute('data-tourstep') ? tour.i + (+tb.getAttribute('data-tourstep')) : +tb.getAttribute('data-tourgo')); }
     return;
   }
   const t = ev.target.closest('[data-go],[data-jump],[data-home],[data-dim],[data-chain]');
@@ -542,8 +581,8 @@ function makeMarker(n, cls, color, label, order){
 
 function tourLines(pairs){ return fc(pairs.map(e=>({type:'Feature',properties:{col:dimColor(e.d),conf:e.c},geometry:{type:'LineString',coordinates:gc(byId[e.f].c,byId[e.t].c)}}))); }
 function drawTourMap(){
-  const t=tour.t, N=t.stops.length, i=tour.i, cur=i<N ? t.stops[i] : null;
-  const before = t.stops.slice(0, cur ? i : N).flatMap(s=>pathEdges(s.path));
+  const t=tour.t, N=t.stops.length, i=tour.i, cur=(i>=0 && i<N) ? t.stops[i] : null;
+  const before = i<0 ? [] : t.stops.slice(0, cur ? i : N).flatMap(s=>pathEdges(s.path));
   map.getSource('trail').setData(tourLines(before));
   map.getSource('spider').setData(tourLines(cur ? pathEdges(cur.path) : []));
   const shown=new Set();
@@ -551,7 +590,7 @@ function drawTourMap(){
     const n=byId[cur.at]; makeMarker(n,'cur',kindColor(n),n.n,0); shown.add(cur.at);
     cur.path.forEach((id,k)=>{ if(shown.has(id)) return; shown.add(id); makeMarker(byId[id],'tgt',kindColor(byId[id]),byId[id].n,10+k); });
   }
-  t.stops.slice(0, cur ? i : N).forEach((s,k)=>{ if(shown.has(s.at)) return; shown.add(s.at); makeMarker(byId[s.at],'past',css('--ink'),(k+1)+'. '+byId[s.at].n,30+k); });
+  (i<0 ? [] : t.stops.slice(0, cur ? i : N)).forEach((s,k)=>{ if(shown.has(s.at)) return; shown.add(s.at); makeMarker(byId[s.at],'past',css('--ink'),(k+1)+'. '+byId[s.at].n,30+k); });
   setTimeout(declutter,0);
 }
 function drawMap(){
@@ -586,7 +625,8 @@ function declutter(){
 
 function padding(){
   const W=innerWidth,H=innerHeight;
-  if(isMobile()){ const h=Math.min(panel.getBoundingClientRect().height,H*0.5); return {top:60,bottom:Math.min(h+16,H-200),left:24,right:tour?110:24}; }
+  if(tour){ const card = tour.i<0 || tour.i>=tour.t.stops.length; return isMobile() ? {top:70,bottom:card?Math.round(H*0.25):Math.round(H*0.56),left:30,right:120} : {top:80,bottom:card?140:Math.min(300,Math.round(H*0.36)),left:90,right:200}; }
+  if(isMobile()){ const h=Math.min(panel.getBoundingClientRect().height,H*0.5); return {top:60,bottom:Math.min(h+16,H-200),left:24,right:24}; }
   return {top:80,bottom:50,left:Math.min(392+16+50,W-300),right:current()?110:170};
 }
 function fitView(){
@@ -594,7 +634,7 @@ function fitView(){
   const id=tour ? null : current(); const pad=padding(); const opt={padding:pad,duration:reduceMotion?0:(tour?2200:1600),essential:true};
   let pts, ref;
   if(tour){
-    const t=tour.t, s=t.stops[tour.i];
+    const t=tour.t, s=tour.i>=0 ? t.stops[tour.i] : null;
     const ids = s ? s.path : [...new Set(t.stops.flatMap(x=>x.path))];
     pts = ids.map(x=>byId[x].c); ref = byId[s ? s.at : ids[0]].c[0];
     if(pts.length===1){ map.flyTo(Object.assign({},opt,{center:pts[0],zoom:5})); return; }
