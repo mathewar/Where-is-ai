@@ -97,7 +97,7 @@ const TOURS = [
   id:'gas-rush', kicker:'Follow the power', title:'The gas rush',
   lede:'The grid can’t connect new data centers fast enough, so the labs are bringing their own power plants. On this map, nearly all of them burn natural gas.',
   stops:[
-    {at:'colossus2', path:['xai','colossus2'], text:'SpaceX’s Colossus 2 in Memphis is a gigawatt-scale cluster of Nvidia GB200 racks, built to train Grok.'},
+    {at:'colossus2', path:['xai','colossus2'], text:'Start in Memphis. SpaceX’s Colossus 2 is a gigawatt-scale cluster of Nvidia GB200 racks, built to train Grok, and it needs that much power around the clock.'},
     {at:'southaven_gas', path:['colossus2','southaven_gas'], text:'Its power comes from across the state line, at a former Duke Energy site in Southaven, Mississippi. Mobile turbines run there while a permanent 1.2 GW, 41-turbine plant goes up. The air permit was upheld in November 2026; an NAACP Clean Air Act suit continues.'},
     {at:'solaris', path:['southaven_gas','solaris'], text:'The turbines are rented. About 400 MW come from Solaris Energy of Houston, and xAI holds about two-thirds of its orderbook, per SemiAnalysis.'},
     {at:'hyperion_gas', path:['meta','hyperion','hyperion_gas'], text:'Meta went bigger. Its Hyperion campus in Louisiana is to be fed by 10 gas plants, ~7.5 GW in all, built by Entergy and paid for by Meta.'},
@@ -106,4 +106,28 @@ const TOURS = [
   ],
   close:'Rented turbines, generators bought outright, power plants paid for by the lab itself: on this map, the quickest power for AI comes from gas.'
 }
+];
+
+// Plain-language explainers. A caption shows the first of these its text mentions, once per tour, under the
+// narration. General background only: claims about specific companies or deals belong in the graph.
+const GLOSSARY = [
+  {term:'Gigawatt', match:'gigawatt|\\bGW\\b', text:'About the output of a large nuclear reactor: enough electricity for a mid-sized city.'},
+  {term:'Megawatt', match:'\\bMW\\b|megawatt', text:'A thousandth of a gigawatt, roughly enough for several hundred homes.'},
+  {term:'Blackwell', match:'GB200|GB300|Blackwell', text:'Nvidia’s current generation of AI chips. GB200 and GB300 systems wire dozens of them together in a single rack.'},
+  {term:'Vera Rubin', match:'Rubin', text:'The Nvidia chip generation that follows Blackwell.'},
+  {term:'H800', match:'H800', text:'A cut-down Nvidia chip made for China under earlier US export rules.'},
+  {term:'CoWoS', match:'CoWoS|packag', text:'TSMC’s advanced packaging: it bonds a processor and stacks of memory onto one base so they can talk at high speed.'},
+  {term:'High-bandwidth memory', match:'high-bandwidth memory|\\bHBM\\b', text:'Memory chips stacked into towers right beside the processor. AI chips are often limited by how much of it they get.'},
+  {term:'EUV', match:'\\bEUV\\b', text:'Extreme-ultraviolet lithography, which prints the finest features on today’s most advanced chips.'},
+  {term:'DUV', match:'\\bDUV\\b', text:'The older generation of lithography. It can still make advanced chips, with extra steps and lower yields.'},
+  {term:'TPU', match:'\\bTPUs?\\b', text:'Google’s own AI chips, designed in-house as an alternative to Nvidia GPUs.'},
+  {term:'Trainium', match:'Trainium', text:'Amazon’s own AI training chip.'},
+  {term:'MTIA', match:'MTIA', text:'Meta’s in-house family of AI chips.'},
+  {term:'Neocloud', match:'neocloud', text:'A newer cloud company that mostly rents out GPUs for AI, rather than offering every kind of cloud service.'},
+  {term:'Entity List', match:'Entity List', text:'A US export blacklist: American companies need a licence to sell to anyone on it.'},
+  {term:'Export controls', match:'restricted|export', text:'US rules that bar sales of the most advanced AI chips into China without a licence, including via other countries.'},
+  {term:'Teardown', match:'teardown', text:'Analysts take a chip apart physically to see who made each of its parts.'},
+  {term:'Fuel assemblies', match:'fuel assembl', text:'Bundles of metal rods filled with uranium pellets, loaded into the reactor core.'},
+  {term:'Enrichment', match:'enrich', text:'Raising the share of the fissile isotope in uranium so it can sustain a chain reaction in a reactor.'},
+  {term:'Genset', match:'genset', text:'An engine and an electrical generator in one unit, here burning natural gas.'}
 ];

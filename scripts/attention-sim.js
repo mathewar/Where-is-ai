@@ -8,12 +8,14 @@
 //   (serve the site first, e.g. `npx serve .` or `python3 -m http.server 8765`)
 //
 // Model (seconds). Constants are deliberately simple and documented so they can be argued with.
-//   Read      R = 0.4 (strap glance) + words / 3.3            ~200 wpm for on-screen narration
+//   Read      R = 0.4 (strap glance) + words / 4.2            ~250 wpm (caption + any glossary line). Calibrated
+//             down from 200 wpm after a viewer found text-heavy stops held too long.
 //   Orient    O = 0.4 + 0.35·|Δzoom| + 0.5 if the new focus was off-screen in the previous frame
 //   Find      F = 0.25 + 0.035·√clutter                       clutter = plants + 3·graph pins + 4·labels in view, weighted by how dimmed they are
 //   Links     L = Σ 0.6 per link, +0.5 if it is shorter than 40 px, +0.3 if an end is off-screen
 //   Sources   S = 0.6, counted at half weight (an optional glance)
-//   Need      = O + F + L + R + 0.3 (+ a 0.6 s beat in the app's hold)
+//   Need      = R + max(0, O + F + L − flight time) + 0.3       map work overlaps the camera flight
+//             (the app adds a 0.6 s beat to this for its hold)
 //   Available = time the caption is readable before the next stop (motion time counts half: you can't
 //               read and track a moving camera at once)
 //   Dead air  = time with no readable caption, minus up to 1.5 s of camera motion (motion holds attention
@@ -29,7 +31,7 @@ const mobile = args.includes('--mobile');
 const jsonOut = args.includes('--json') ? args[args.indexOf('--json') + 1] : null;
 const VIEW = mobile ? { width: 390, height: 844, isMobile: true, hasTouch: true } : { width: 1366, height: 820 };
 
-const M = { wps: 3.3, strap: 0.4, orient0: 0.4, orientZ: 0.35, offscreen: 0.5, find0: 0.25, findK: 0.035,
+const M = { wps: 4.2, strap: 0.4, orient0: 0.4, orientZ: 0.35, offscreen: 0.5, find0: 0.25, findK: 0.035,
   link: 0.6, shortLink: 0.5, offLink: 0.3, src: 0.3, motionGrace: 1.5, drag: 3.5 };
 
 function need(st) {
@@ -37,7 +39,8 @@ function need(st) {
   const O = M.orient0 + M.orientZ * Math.abs(st.dz) + (st.wasOffscreen ? M.offscreen : 0);
   const F = M.find0 + M.findK * Math.sqrt(st.clutter);
   const L = st.links.reduce((s, l) => s + M.link + (l.px < 40 ? M.shortLink : 0) + (l.off ? M.offLink : 0), 0);
-  return { R, O, F, L, total: O + F + L + R + M.src };
+  // map work happens while the camera is still flying; only what outlasts the flight costs extra time
+  return { R, O, F, L, total: R + Math.max(0, O + F + L - st.motion) + M.src };
 }
 
 (async () => {
@@ -103,8 +106,8 @@ function need(st) {
         else if (firstShow === null && k > 2) firstShow = tt / 1000;
         if (!mv && tl[k - 1][2] && landed === null) landed = tt / 1000;
       }
-      const words = t.stops[i].text.split(/\s+/).length;
-      const st = { words, dz: scene.z - prev.z, wasOffscreen: scene.wasOffscreen, clutter: Math.round(scene.plants + 3 * scene.pins + 4 * scene.labels), links: scene.links };
+      const words = await page.evaluate(() => ['.cap-text', '.cap-gloss'].map(q => (document.querySelector('#cap ' + q) || {}).textContent || '').join(' ').trim().split(/\s+/).filter(Boolean).length + (document.querySelector('#cap .cap-gloss') ? 2 : 0));
+      const st = { motion, words, dz: scene.z - prev.z, wasOffscreen: scene.wasOffscreen, clutter: Math.round(scene.plants + 3 * scene.pins + 4 * scene.labels), links: scene.links };
       const nd = need(st);
       const holdS = hold != null ? hold / 1000 : null;
       const overlapMotion = firstShow !== null && landed !== null ? Math.max(0, landed - firstShow) : 0;
