@@ -42,6 +42,20 @@ LABS.forEach(lab => {
   while(q.length){ const x=q.shift(); reach[x].add(lab); OUT[x].forEach(e => { if(!seen.has(e.t)){ seen.add(e.t); q.push(e.t);} }); }
 });
 
+// ---------- tours (data/tours.js) ----------
+const EDGE = {}; EDGES.forEach(([f,t,d,c,note,src]) => { EDGE[f+'>'+t] = {f,t,d,c,note,src:src||[]}; });
+const fillT = s => String(s||'').replace(/\{\{labs\}\}/g, LABS.length).replace(/\{\{reach:([^}]+)\}\}/g, (m,id) => reach[id] ? reach[id].size : '');
+const pathEdges = p => p.slice(1).map((id,j) => EDGE[p[j]+'>'+id]).filter(Boolean);
+// a tour whose stops or links no longer exist in the graph is skipped rather than shown broken
+const tourOK = t => t && Array.isArray(t.stops) && t.stops.length>=3 && t.stops.every(s => byId[s.at] && Array.isArray(s.path) && s.path.length && s.path.every((id,j) => byId[id] && (!j || EDGE[s.path[j-1]+'>'+id])));
+const WRITTEN = (typeof TOURS!=='undefined' && Array.isArray(TOURS) ? TOURS : []).filter(tourOK);
+function getTour(id){ return id ? WRITTEN.find(t => t.id===id) || null : null; }
+let lastTour = null; try{ lastTour = localStorage.getItem('sl-last-tour'); }catch(e){}
+function pickTour(){
+  const pool = WRITTEN.map(t => t.id).filter(id => id!==lastTour);
+  return pool.length ? pool[Math.floor(Math.random()*pool.length)] : null;
+}
+
 // ---------- geometry ----------
 function unwrap(lon, ref){ return lon + 360*Math.round((ref-lon)/360); }
 function gc(a, b, n){
@@ -65,6 +79,9 @@ let markers = [];
 let plantsOn = true;
 let activeFuels = new Set(PLANTS.fuels.map((_,i)=>i));
 let globe = false;
+let tour = null;          // {t: tour, i}: i = -1 title card, 0..N-1 stops, N closing card
+let playing = false;      // documentary autoplay
+let capTimer = null, capSeq = 0;
 
 const panel = document.getElementById('panel');
 const head = document.getElementById('head');
@@ -72,11 +89,32 @@ const body = document.getElementById('body');
 
 // ---------- navigation ----------
 function current(){ return trail.length ? trail[trail.length-1] : null; }
-function go(id){ if(current()!==id){ const i=trail.indexOf(id); if(i>=0) trail=trail.slice(0,i+1); else trail.push(id);} dimFilter=null; expand(); render(true); }
+function go(id){ if(tour){ leaveTour(); trail=[]; } if(current()!==id){ const i=trail.indexOf(id); if(i>=0) trail=trail.slice(0,i+1); else trail.push(id);} dimFilter=null; expand(); render(true); }
 function jump(i){ trail=trail.slice(0,i+1); dimFilter=null; render(true); }
 function home(){ trail=[]; dimFilter=null; render(true); }
 function setDim(d){ dimFilter = dimFilter===d ? null : d; render(true); }
-window.__nav = {go, jump, home, setDim};
+function leaveTour(){ clearTimeout(capTimer); capSeq++; playing=false; tour=null; }
+function startTour(id){
+  const t = getTour(id || pickTour()); if(!t) return;
+  clearTimeout(capTimer); tour = {t, i:-1}; trail=[]; dimFilter=null; lastTour = t.id; playing = !reduceMotion;
+  try{ localStorage.setItem('sl-last-tour', t.id); }catch(e){}
+  render(true);
+}
+function tourTo(i){ if(!tour) return; const N=tour.t.stops.length; i=Math.max(-1, Math.min(N, i)); if(i===tour.i) return; tour.i=i; if(i>=N) playing=false; render(true); }
+function exitTour(explore){
+  const t = tour; leaveTour(); dimFilter=null;
+  if(explore && t && t.i>=0){ const s=t.t.stops[Math.min(t.i, t.t.stops.length-1)], k=s.path.indexOf(s.at);
+    trail = byId[s.path[0]].k==='lab' && k>=0 ? s.path.slice(0, k+1) : [s.at]; }
+  else trail=[];
+  render(true);
+}
+function toggleAuto(){
+  if(!tour) return;
+  playing = !playing;
+  if(tour.i>=tour.t.stops.length && playing){ tourTo(-1); return; }
+  clearTimeout(capTimer); refreshCtl(); if(playing) schedule();
+}
+window.__nav = {go, jump, home, setDim, startTour, tourTo, exitTour};
 
 // ---------- mobile bottom sheet: collapsed / half / full, draggable ----------
 const handleEl=document.getElementById('handle');
@@ -165,6 +203,8 @@ function renderHome(){
   body.innerHTML =
     '<h1>Where frontier AI comes from</h1>'+
     '<p class="lede">Pick a lab or search above, then follow its supply lines out across the map: compute, chips, memory, fabs, lithography, materials, power and data. Every stop opens its own suppliers, down to the power plants and uranium mines.</p>'+
+    '<div class="tourcta"><button class="tourbtn" data-tour="">▶ Start a tour</button><span>A short, sourced story from the map. A different one each time.</span></div>'+
+    (WRITTEN.length ? '<div class="chips tourpick" aria-label="Choose a tour">'+WRITTEN.map(t=>'<button class="chip" data-tour="'+esc(t.id)+'">'+esc(fillT(t.title))+'</button>').join('')+'</div>' : '')+
     '<h2>United States & UK</h2>'+lb(us)+
     '<h2>China</h2>'+lb(cn)+
     '<h2>Chokepoints every lab runs through</h2>'+
@@ -237,17 +277,166 @@ function renderNode(id){
   body.innerHTML = h;
 }
 
-// ---------- shareable URL: #/lab/stop/stop?dim=chips ----------
+// ---------- tour: documentary captions over the map ----------
+const appEl = document.getElementById('app');
+const cap = document.createElement('div'); cap.id='cap'; cap.className='cap'; appEl.appendChild(cap);
+// Viewer-attention model (same constants as scripts/attention-sim.js, which tunes them). A stop is held for
+// as long as the viewer needs to re-orient, find the focus, take in its links and read the caption.
+const ATTN = { wps:3.3, strap:0.4, orient0:0.4, orientZ:0.35, offscreen:0.5, find0:0.25, findK:0.035,
+  link:0.6, shortLink:0.5, offLink:0.3, src:0.3, beat:0.8, minHold:4.5, cardBeat:1.2 };
+window.__tourModel = ATTN;
+const words = s => String(s).trim().split(/\s+/).length;
+let curHold = 6000, prevView = null;
+window.__tourHoldMs = () => curHold;
+function safeBox(){ const p=padding(); return [[p.left, p.top],[innerWidth-p.right, innerHeight-p.bottom]]; }
+function attentionNeed(){
+  const t=tour.t, i=tour.i, N=t.stops.length;
+  if(i<0) return ATTN.strap + words(fillT(t.title+' '+t.lede))/ATTN.wps + ATTN.cardBeat;
+  if(i>=N) return ATTN.strap + words(fillT(t.close))/ATTN.wps + ATTN.cardBeat;
+  const s=t.stops[i], R=ATTN.strap + words(fillT(s.text))/ATTN.wps;
+  if(!mapReady) return R + 1.5;
+  const [[l,tp],[r,b]] = safeBox(), inSafe = p => p.x>=l && p.x<=r && p.y>=tp && p.y<=b;
+  const w = window.__clutterWeights || {plants:1,nodes:1};
+  const plants = map.queryRenderedFeatures([[l,tp],[r,b]],{layers:['plants']}).length;
+  const pins = new Set(map.queryRenderedFeatures([[l,tp],[r,b]],{layers:['nodes']}).map(f=>f.properties.id)).size;
+  const labels = document.querySelectorAll('.mk .l:not(.hide)').length;
+  const clutter = plants*w.plants + 3*pins*w.nodes + 4*labels;
+  const dz = prevView ? Math.abs(map.getZoom()-prevView.z) : 0;
+  const c = byId[s.at].c, pb = prevView && prevView.b;
+  const off = pb ? !(c[0]>=pb[0][0] && c[0]<=pb[1][0] && c[1]>=pb[0][1] && c[1]<=pb[1][1]) : false;
+  const O = ATTN.orient0 + ATTN.orientZ*dz + (off?ATTN.offscreen:0);
+  const F = ATTN.find0 + ATTN.findK*Math.sqrt(clutter);
+  const L = pathEdges(s.path).reduce((sum,e)=>{ const a=map.project(byId[e.f].c), bb=map.project(byId[e.t].c);
+    return sum + ATTN.link + (Math.hypot(a.x-bb.x,a.y-bb.y)<40?ATTN.shortLink:0) + (!inSafe(a)||!inSafe(bb)?ATTN.offLink:0); }, 0);
+  return O + F + L + R + ATTN.src;
+}
+function capHTML(){
+  const t=tour.t, i=tour.i, N=t.stops.length;
+  let h = '<button class="cap-x" data-tourexit aria-label="Close tour">✕</button><div class="cap-in">';
+  if(i<0){
+    h += '<div class="cap-card"><div class="cap-kicker">'+esc(t.kicker||'Tour')+'</div><h2 class="cap-h">'+esc(fillT(t.title))+'</h2><p class="cap-lede">'+esc(fillT(t.lede))+'</p></div>';
+  } else if(i>=N){
+    h += '<div class="cap-card"><div class="cap-kicker">'+esc(t.kicker||'Tour')+'</div><p class="cap-close">'+esc(fillT(t.close))+'</p>'+
+      '<div class="cap-endb"><button class="cap-btn primary" data-tour="">Another tour</button><button class="cap-btn" data-tourexit="explore">Explore the map</button><button class="cap-btn" data-tourauto>Watch again</button></div></div>';
+  } else {
+    const s=t.stops[i], n=byId[s.at], es=pathEdges(s.path);
+    h += '<div class="cap-low"><div class="cap-strap" style="--c:'+kindColor(n)+'"><b>'+esc(n.n)+'</b><span>'+esc(n.p)+(n.a?' · location approximate':'')+'</span></div>'+
+      '<p class="cap-text">'+esc(fillT(s.text))+'</p>'+
+      (es.length ? '<div class="cap-src">'+es.map(e=>'<span class="cap-conf '+e.c+'">'+CONF[e.c]+'</span>'+(SRC[e.src[0]] ? '<a href="'+esc(SRC[e.src[0]].u)+'" target="_blank" rel="noopener noreferrer">'+esc(SRC[e.src[0]].t)+' ↗</a>' : '')+(e.src.length>1?'<span class="cap-more">+'+(e.src.length-1)+'</span>':'')).join('<span class="cap-dot">·</span>')+'</div>' : '')+
+      '</div>';
+  }
+  return h + ctlHTML() + '</div>';
+}
+function ctlHTML(){
+  const t=tour.t, i=tour.i, N=t.stops.length;
+  return '<div class="cap-ctl"><div class="cap-bar" role="group" aria-label="Tour stops">'+t.stops.map((s,k)=>'<button class="'+(k<i?'done':(k===i?'cur':''))+'" data-tourgo="'+k+'" aria-label="Stop '+(k+1)+': '+esc(byId[s.at].n)+'"><b></b></button>').join('')+'</div>'+
+    '<div class="cap-btns"><button class="cap-ic" data-tourstep="-1" aria-label="Previous"'+(i<0?' disabled':'')+'>‹</button>'+
+    '<button class="cap-ic play" data-tourauto aria-label="'+(playing?'Pause':'Play')+'">'+(playing?'❚❚':'▶')+'</button>'+
+    '<button class="cap-ic" data-tourstep="1" aria-label="Next"'+(i>=N?' disabled':'')+'>›</button>'+
+    '<span class="cap-count">'+esc(fillT(t.title))+(i>=0&&i<N?' · '+(i+1)+' of '+N:'')+'</span>'+
+    '<button class="cap-link" data-share>Share</button>'+(i>=0&&i<N?'<button class="cap-link" data-tourexit="explore">Explore from here</button>':'')+'</div></div>';
+}
+function refreshCtl(){ const c=cap.querySelector('.cap-ctl'); if(c){ c.outerHTML=ctlHTML(); } if(playing) runBar(); }
+function runBar(){
+  const b=cap.querySelector('.cap-bar .cur b'); if(!b || !tour) return;
+  b.style.transition='none'; b.style.width='0%'; void b.offsetWidth;
+  b.style.transition='width '+curHold+'ms linear'; b.style.width='100%';
+}
+function schedule(){
+  clearTimeout(capTimer); if(!playing || !tour) return;
+  const i=tour.i, N=tour.t.stops.length; if(i>=N){ playing=false; refreshCtl(); return; }
+  runBar(); capTimer=setTimeout(()=>tourTo(i+1), curHold);
+}
+const PLANT_OP = ['interpolate',['linear'],['zoom'],1,0.35,5,0.7,9,0.85], PLANT_OP_DIM = ['interpolate',['linear'],['zoom'],1,0.1,5,0.2,9,0.26];
+function setDimmed(on){
+  if(!mapReady) return;
+  map.setPaintProperty('plants','circle-opacity', on ? PLANT_OP_DIM : PLANT_OP);
+  map.setPaintProperty('nodes','circle-opacity', on ? 0.18 : 0.55);
+  window.__clutterWeights = on ? {plants:0.3, nodes:0.33} : {plants:1, nodes:1};
+}
+// where the camera should go for this stop: as close as the links allow, zoomed in further where the focus
+// sits among other pins, but never so close the viewer loses the region, nor a big jump in one go
+const KM = (a,b) => { const R=Math.PI/180, x=Math.sin((b[1]-a[1])*R/2)**2+Math.cos(a[1]*R)*Math.cos(b[1]*R)*Math.sin((b[0]-a[0])*R/2)**2; return 12742*Math.asin(Math.sqrt(x)); };
+const merc = c => { const lat=Math.max(-85,Math.min(85,c[1]))*Math.PI/180; return [ (c[0]+180)/360*512, (1-Math.log(Math.tan(lat)+1/Math.cos(lat))/Math.PI)/2*512 ]; };
+const unmerc = (x,y) => [x/512*360-180, Math.atan(Math.sinh(Math.PI*(1-2*y/512)))*180/Math.PI];
+// camera that fits lon/lat bounds inside the padded area. Done by hand: MapLibre's cameraForBounds/fitBounds add
+// their padding on top of the padding a previous flyTo left on the map, which doubled the margins.
+function frameBounds(b, pad){
+  const a=merc(b[0]), c=merc(b[1]); const dx=Math.abs(c[0]-a[0]), dy=Math.abs(c[1]-a[1]);
+  const sw=Math.max(40, innerWidth-pad.left-pad.right), sh=Math.max(40, innerHeight-pad.top-pad.bottom);
+  const zoom=Math.log2(Math.min(sw/Math.max(dx,1e-6), sh/Math.max(dy,1e-6)));
+  const ll=unmerc((a[0]+c[0])/2, (a[1]+c[1])/2);
+  return {center:{lng:ll[0], lat:ll[1]}, zoom};
+}
+function tourCamera(){
+  const t=tour.t, i=tour.i, N=t.stops.length, s=(i>=0 && i<N) ? t.stops[i] : null;
+  const ids = s ? s.path : [...new Set(t.stops.flatMap(x=>x.path))];
+  const pad = padding(), W = innerWidth, mob = isMobile();
+  const ref = byId[s ? s.at : ids[0]].c[0];
+  const pts = ids.map(id => [unwrap(byId[id].c[0], ref), byId[id].c[1]]);
+  let zFit = Infinity, center = s ? {lng:byId[s.at].c[0], lat:byId[s.at].c[1]} : null;
+  if(pts.length>1){
+    const xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]);
+    const cam=frameBounds([[Math.min(...xs),Math.min(...ys)],[Math.max(...xs),Math.max(...ys)]], pad);
+    zFit=cam.zoom; center=cam.center;
+  }
+  const lat = center ? (center.lat!==undefined ? center.lat : center[1]) : 20;
+  const zCtx = Math.log2(W*40075*Math.cos(lat*Math.PI/180)/(512*(mob?350:700)));   // keep ≥ 700 km (350 on phones) of map in view
+  let zSep = 0;
+  if(s){ const f=byId[s.at].c, fp=merc(f); let d=Infinity;
+    NODES.forEach(n=>{ if(ids.includes(n.id)) return; const km=KM(f,n.c); if(km<2 || km>400) return; const p=merc(n.c); d=Math.min(d, Math.hypot(p[0]-fp[0], p[1]-fp[1])); });
+    if(d<Infinity) zSep = Math.log2(36/d); }                                            // pull nearby pins ≥ 36 px apart
+  const zComfort = mob ? 3.4 : 4.2;                                                       // a regional view by default
+  let z = s ? Math.min(zFit, zCtx, Math.max(zSep, zComfort)) : Math.min(zFit, 4);
+  const zPrev = map.getZoom();
+  if(z - zPrev > 3.2) z = zPrev + 3.2;                                                     // no plunges
+  z = Math.max(0.4, z);
+  if(!center){ center = {lng:pts[0][0], lat:pts[0][1]}; }
+  const cc = map.getCenter(), km = KM([cc.lng,cc.lat],[center.lng!==undefined?center.lng:center[0], lat]);
+  const duration = reduceMotion ? 0 : Math.round(Math.min(2000, Math.max(800, 600 + 330*Math.abs(z-zPrev) + 220*Math.log2(1+km/300))));
+  return {center, zoom:z, padding:pad, duration};
+}
+function setLineOpacity(o, ms){
+  if(!mapReady) return;
+  ['spider-solid','spider-dash'].forEach(l=>{ map.setPaintProperty(l,'line-opacity-transition',{duration:ms,delay:0}); map.setPaintProperty(l,'line-opacity',o); });
+}
+// caption fades out as the camera leaves; the next one fades in over the last part of the flight, and the
+// stop's links fade in as the camera lands. The hold is set by the attention model once we've landed.
+function playStep(move){
+  const seq=++capSeq; clearTimeout(capTimer);
+  document.body.classList.add('touring'); setDimmed(true);
+  const i=tour.i, N=tour.t.stops.length, card = i<0 || i>=N, had = !!cap.innerHTML;
+  if(mapReady) prevView = {z:map.getZoom(), b:map.getBounds().toArray()};
+  cap.classList.add('out');
+  const show=()=>{ if(seq!==capSeq || !tour) return; cap.classList.toggle('is-card', card); cap.innerHTML=capHTML(); void cap.offsetWidth; cap.classList.remove('out'); };
+  const land=()=>{ if(seq!==capSeq || !tour) return; setLineOpacity(0.95, 450);
+    setTimeout(()=>{ if(seq!==capSeq || !tour) return; curHold = Math.round(1000*Math.max(ATTN.minHold, attentionNeed() + ATTN.beat)); schedule(); }, 250); };
+  if(!mapReady){ setTimeout(()=>{ show(); land(); }, 150); return; }
+  setLineOpacity(0, 0); drawMap();
+  if(!move){ setTimeout(()=>{ show(); land(); }, had ? 260 : 0); return; }
+  const cam = tourCamera();
+  map.flyTo({center:cam.center, zoom:cam.zoom, padding:cam.padding, duration:cam.duration, essential:true});
+  setTimeout(show, Math.max(had ? 260 : 0, cam.duration - 650));   // narration starts as the camera settles
+  let done=false; const fin=()=>{ if(done) return; done=true; land(); };
+  setTimeout(()=>{ if(map.isMoving()) map.once('moveend', fin); else fin(); }, 30);
+  setTimeout(fin, cam.duration + 300);
+}
+
+// ---------- shareable URL: #/lab/stop/stop?dim=chips, or #/tour/<id>/<stop> ----------
 let fromURL=false;
-function stateHash(){ return trail.length ? '#/'+trail.map(encodeURIComponent).join('/')+(dimFilter?'?dim='+dimFilter:'') : ''; }
+function stateHash(){ if(tour) return '#/tour/'+encodeURIComponent(tour.t.id)+(tour.i>=0?'/'+(tour.i+1):''); return trail.length ? '#/'+trail.map(encodeURIComponent).join('/')+(dimFilter?'?dim='+dimFilter:'') : ''; }
 function writeURL(){
   const h=stateHash();
-  document.title = trail.length ? byId[current()].n+' · Supply Lines' : 'Supply Lines · where frontier AI comes from';
+  document.title = tour ? fillT(tour.t.title)+' · Supply Lines' : trail.length ? byId[current()].n+' · Supply Lines' : 'Supply Lines · where frontier AI comes from';
   if(fromURL || location.hash===h || (!h && !location.hash)) return;
   try{ history.pushState(null,'',h || location.pathname+location.search); }catch(e){}
 }
 function readURL(){
   const m=(location.hash||'').match(/^#\/([^?]*)(?:\?(.*))?$/);
+  const was = tour; clearTimeout(capTimer); tour=null;
+  const tm = m && m[1].match(/^tour\/([^/]+)(?:\/(\d+))?$/);
+  if(tm){ const t=getTour(decodeURIComponent(tm[1])); if(t){ tour={t, i:tm[2] ? Math.max(0, Math.min(t.stops.length, parseInt(tm[2],10)-1)) : -1}; if(!was) playing=false; trail=[]; dimFilter=null; return; } }
+  playing=false;
   trail = m ? m[1].split('/').map(decodeURIComponent).filter(id=>byId[id]) : [];
   const d = m && m[2] ? new URLSearchParams(m[2]).get('dim') : null;
   dimFilter = d && DIMS[d] ? d : null;
@@ -263,9 +452,9 @@ async function share(){
 
 function render(move){
   writeURL();
-  renderHead();
-  const id = current();
-  if(id) renderNode(id); else renderHome();
+  if(tour){ playStep(move); return; }
+  if(document.body.classList.contains('touring')){ document.body.classList.remove('touring'); cap.innerHTML=''; cap.className='cap'; capSeq++; clearTimeout(capTimer); setLineOpacity(0.9, 0); setDimmed(false); }
+  renderHead(); const id = current(); if(id) renderNode(id); else renderHome();
   body.scrollTop = 0;
   if(mapReady){ drawMap(); if(move) fitView(); }
 }
@@ -336,12 +525,28 @@ qIn.addEventListener('keydown',e=>{
 qRes.addEventListener('mousedown',e=>e.preventDefault());
 qRes.addEventListener('click',e=>{ const b=e.target.closest('[data-q]'); if(b) pick(b.dataset.q); });
 document.addEventListener('click',e=>{ if(!e.target.closest('.search')) qRes.hidden=true; });
+document.addEventListener('keydown',e=>{
+  if(!tour || /input|textarea|select/i.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+  if(e.key==='ArrowRight'){ e.preventDefault(); tourTo(tour.i+1); }
+  else if(e.key==='ArrowLeft'){ e.preventDefault(); tourTo(tour.i-1); }
+  else if(e.key===' ' && !/button|a/i.test(document.activeElement.tagName)){ e.preventDefault(); toggleAuto(); }
+  else if(e.key==='Escape'){ e.preventDefault(); exitTour(false); }
+});
 document.addEventListener('keydown',e=>{ if(e.key==='/' && document.activeElement!==qIn && !/input|textarea/i.test(document.activeElement.tagName)){ e.preventDefault(); qIn.focus(); } });
 
 document.addEventListener('click', ev => {
   if(ev.target.closest('a')) return;
   if(ev.target.closest('[data-share]')){ share(); return; }
   if(ev.target.closest('[data-about]')){ expand(); const el=document.getElementById('about'); if(el) el.scrollIntoView({behavior:reduceMotion?'auto':'smooth',block:'start'}); return; }
+  const tb = ev.target.closest('[data-tour],[data-tourstep],[data-tourgo],[data-tourexit],[data-tourauto]');
+  if(tb){
+    if(tb.disabled) return;
+    if(tb.hasAttribute('data-tour')) startTour(tb.getAttribute('data-tour')||null);
+    else if(tb.hasAttribute('data-tourauto')) toggleAuto();
+    else if(tb.hasAttribute('data-tourexit')) exitTour(tb.getAttribute('data-tourexit')==='explore');
+    else if(tour){ tourTo(tb.hasAttribute('data-tourstep') ? tour.i + (+tb.getAttribute('data-tourstep')) : +tb.getAttribute('data-tourgo')); }
+    return;
+  }
   const t = ev.target.closest('[data-go],[data-jump],[data-home],[data-dim],[data-chain]');
   if(!t) return;
   if(t.hasAttribute('data-chain')){ const c=LONG[t.getAttribute('data-chain')]; trail=trail.slice(0,trail.indexOf(c[0])+1||undefined); if(!trail.length||trail[trail.length-1]!==c[0]) trail.push(c[0]); c.slice(1).forEach(x=>trail.push(x)); dimFilter=null; render(true); return; }
@@ -454,8 +659,23 @@ function makeMarker(n, cls, color, label, order){
   m._order=order; markers.push(m); return m;
 }
 
+function tourLines(pairs){ return fc(pairs.map(e=>({type:'Feature',properties:{col:dimColor(e.d),conf:e.c},geometry:{type:'LineString',coordinates:gc(byId[e.f].c,byId[e.t].c)}}))); }
+function drawTourMap(){
+  const t=tour.t, N=t.stops.length, i=tour.i, cur=(i>=0 && i<N) ? t.stops[i] : null;
+  const before = i<0 ? [] : t.stops.slice(0, cur ? i : N).flatMap(s=>pathEdges(s.path));
+  map.getSource('trail').setData(tourLines(before));
+  map.getSource('spider').setData(tourLines(cur ? pathEdges(cur.path) : []));
+  const shown=new Set();
+  if(cur){
+    const n=byId[cur.at]; makeMarker(n,'cur',kindColor(n),n.n,0); shown.add(cur.at);
+    cur.path.forEach((id,k)=>{ if(shown.has(id)) return; shown.add(id); makeMarker(byId[id],'tgt',kindColor(byId[id]),byId[id].n,10+k); });
+  }
+  (i<0 ? [] : t.stops.slice(0, cur ? i : N)).forEach((s,k)=>{ if(shown.has(s.at)) return; shown.add(s.at); makeMarker(byId[s.at],'past',css('--ink'),(k+1)+'. '+byId[s.at].n,30+k); });
+  setTimeout(declutter,0);
+}
 function drawMap(){
   markers.forEach(m=>m.remove()); markers=[];
+  if(tour){ drawTourMap(); return; }
   map.getSource('spider').setData(spiderData());
   map.getSource('trail').setData(trailData());
   const id=current();
@@ -485,23 +705,31 @@ function declutter(){
 
 function padding(){
   const W=innerWidth,H=innerHeight;
+  if(tour){ const card = tour.i<0 || tour.i>=tour.t.stops.length; return isMobile() ? {top:70,bottom:card?Math.round(H*0.25):Math.round(H*0.56),left:30,right:120} : {top:80,bottom:card?140:Math.min(300,Math.round(H*0.36)),left:90,right:200}; }
   if(isMobile()){ const h=Math.min(panel.getBoundingClientRect().height,H*0.5); return {top:60,bottom:Math.min(h+16,H-200),left:24,right:24}; }
   return {top:80,bottom:50,left:Math.min(392+16+50,W-300),right:current()?110:170};
 }
 function fitView(){
   if(!map) return;
-  const id=current(); const pad=padding(); const opt={padding:pad,duration:reduceMotion?0:1600,essential:true};
+  const id=tour ? null : current(); const pad=padding(); const opt={padding:pad,duration:reduceMotion?0:(tour?2200:1600),essential:true};
   let pts, ref;
-  if(!id){ pts=LABS.map(l=>byId[l].c); ref=170; }
+  if(tour && mapReady){ const cam=tourCamera(); map.flyTo({center:cam.center, zoom:cam.zoom, padding:cam.padding, duration:cam.duration, essential:true}); return; }
+  if(tour){
+    const t=tour.t, s=tour.i>=0 ? t.stops[tour.i] : null;
+    const ids = s ? s.path : [...new Set(t.stops.flatMap(x=>x.path))];
+    pts = ids.map(x=>byId[x].c); ref = byId[s ? s.at : ids[0]].c[0];
+    if(pts.length===1){ map.flyTo(Object.assign({},opt,{center:pts[0],zoom:5})); return; }
+  }
+  else if(!id){ pts=LABS.map(l=>byId[l].c); ref=170; }
   else { ref=byId[id].c[0]; pts=[byId[id].c].concat(OUT[id].filter(e=>!dimFilter||e.d===dimFilter).map(e=>byId[e.t].c)); }
   if(pts.length===1){ map.flyTo(Object.assign({},opt,{center:pts[0],zoom:6.5})); return; }
   let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
   pts.forEach(p=>{ const x=unwrap(p[0],ref); minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]); });
-  if(globe && maxX-minX>110){ map.flyTo(Object.assign({},opt,{center:id?byId[id].c:[150,35],zoom:isMobile()?0.6:1.3})); return; }
-  let cam=null; try{ cam=map.cameraForBounds([[minX,minY],[maxX,maxY]],{padding:pad,maxZoom:7.5}); }catch(e){}
-  if(cam && cam.zoom>=0.35){ map.fitBounds([[minX,minY],[maxX,maxY]],Object.assign({},opt,{maxZoom:7.5})); }
+  if(globe && maxX-minX>110){ map.flyTo(Object.assign({},opt,{center:tour?pts[0]:id?byId[id].c:[150,35],zoom:isMobile()?0.6:1.3})); return; }
+  const cam=frameBounds([[minX,minY],[maxX,maxY]], pad);
+  if(cam.zoom>=0.35){ map.flyTo(Object.assign({},opt,{center:cam.center, zoom:Math.min(7.5, cam.zoom)})); }
   else { // too spread out for this screen: keep the current stop in view, lines lead off toward the rest
-    const c = id?byId[id].c:[150,30];
+    const c = tour ? [ref, pts[0][1]] : id?byId[id].c:[150,30];
     map.flyTo(Object.assign({},opt,{center:[c[0],Math.max(-50,Math.min(60,c[1]))],zoom:0.5})); }
 }
 

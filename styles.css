@@ -198,3 +198,76 @@ a.tk-sym:hover{background:var(--rule)}
 .fbnote{font-size:12px;color:var(--muted)}
 .about .credits{font-size:11.5px;color:var(--muted)}
 a.iconbtn{text-decoration:none;display:inline-block}
+
+/* ---------- guided tours ---------- */
+.tourcta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0 10px}
+.tourbtn{background:var(--ink);color:var(--panel);font-weight:700;font-size:14.5px;padding:10px 16px;border-radius:999px;box-shadow:0 6px 18px -8px rgba(18,38,56,.5);transition:transform .15s}
+.tourbtn:hover{transform:translateY(-1px)}
+.tourbtn:focus-visible{outline:2px solid var(--compute);outline-offset:2px}
+.tourcta span{font-size:12.5px;color:var(--muted);max-width:22em}
+.tourpick{margin:0 0 6px}
+.tourpick .chip{text-align:left}
+
+/* ---------- documentary captions (tour mode) ---------- */
+body.touring .panel, body.touring .tools{display:none}
+body.touring .maplibregl-ctrl-bottom-right, body.touring .mapboxgl-ctrl-bottom-right{bottom:auto;top:64px}
+body.touring .maplibregl-ctrl-group, body.touring .mapboxgl-ctrl-group{display:none}
+.cap{position:absolute;inset:auto 0 0 0;z-index:6;pointer-events:none;color:#fff;font-family:var(--ui)}
+body.touring .cap{background:linear-gradient(to top,rgba(5,12,20,.92) 0%,rgba(5,12,20,.78) 38%,rgba(5,12,20,.35) 72%,rgba(5,12,20,0) 100%)}
+body.touring .cap.is-card{inset:0;background:radial-gradient(ellipse at 50% 60%,rgba(5,12,20,.55) 0%,rgba(5,12,20,.88) 75%)}
+.cap-in{pointer-events:auto;max-width:980px;margin:0 auto;padding:110px 48px 22px}
+.cap.is-card .cap-in{height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:22px}
+.cap-low,.cap-card{transition:opacity .45s ease,transform .45s ease}
+.cap.out .cap-low,.cap.out .cap-card{opacity:0;transform:translateY(8px);transition-duration:.25s}
+.cap-strap{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding-left:12px;border-left:4px solid var(--c)}
+.cap-strap b{font-size:14px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+.cap-strap span{font-size:13px;color:rgba(255,255,255,.72);letter-spacing:.02em}
+.cap-text{font-size:27px;line-height:1.32;font-weight:500;margin:14px 0 0;max-width:30em;text-wrap:pretty;text-shadow:0 1px 12px rgba(0,0,0,.45)}
+.cap-src{margin-top:14px;font-size:12px;color:rgba(255,255,255,.7);display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.cap-src a{color:inherit;text-decoration:underline;text-decoration-color:rgba(255,255,255,.35);text-underline-offset:2px;overflow-wrap:anywhere}
+.cap-src a:hover{color:#fff}
+.cap-conf{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border:1px solid rgba(255,255,255,.55);border-radius:4px;padding:1px 6px}
+.cap-conf.c{background:#fff;color:#0b1824;border-color:#fff}
+.cap-conf.i{border-style:dashed}
+.cap-more,.cap-dot{opacity:.6}
+.cap-card{max-width:760px;margin:0 auto 6vh;text-align:center}
+.cap-kicker{font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#f5a53a}
+.cap-h{color:#fff;font-weight:800;font-stretch:120%;font-size:54px;line-height:1;letter-spacing:-.02em;margin:14px 0 18px}
+.cap-lede,.cap-close{font-size:21px;line-height:1.45;margin:0 auto;max-width:34em;color:rgba(255,255,255,.9)}
+.cap-close{font-size:26px;font-weight:600;margin-top:16px;color:#fff}
+.cap-endb{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:28px}
+.cap-btn{padding:11px 18px;border-radius:999px;border:1.5px solid rgba(255,255,255,.5);font-weight:600;font-size:14px;color:#fff}
+.cap-btn:hover{border-color:#fff}
+.cap-btn.primary{background:#fff;color:#0b1824;border-color:#fff}
+.cap-ctl{margin-top:20px}
+.cap-bar{display:flex;gap:4px}
+.cap-bar button{flex:1;height:14px;display:flex;align-items:center}
+.cap-bar button::before{content:"";display:block;width:100%;height:3px;border-radius:2px;background:rgba(255,255,255,.25)}
+.cap-bar button{position:relative}
+.cap-bar button b{position:absolute;left:0;top:5.5px;height:3px;border-radius:2px;background:#fff;width:0}
+.cap-bar button.done b{width:100%}
+.cap-bar button.cur b{width:100%}
+body.touring .cap-bar button.cur b{width:0}
+.cap-btns{display:flex;align-items:center;gap:8px;margin-top:8px}
+.cap-ic{width:34px;height:34px;border-radius:50%;border:1.5px solid rgba(255,255,255,.4);font-size:18px;line-height:1;display:grid;place-items:center;color:#fff}
+.cap-ic.play{font-size:12px}
+.cap-ic:hover{border-color:#fff}
+.cap-ic[disabled]{opacity:.3;cursor:default}
+.cap-count{font-size:12.5px;color:rgba(255,255,255,.7);margin-left:6px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cap-link{font-size:12.5px;color:rgba(255,255,255,.8);padding:6px 8px;border-radius:8px}
+.cap-link:hover{background:rgba(255,255,255,.12);color:#fff}
+.cap-x{position:fixed;top:16px;right:16px;width:38px;height:38px;border-radius:50%;background:rgba(5,12,20,.6);color:#fff;font-size:15px;pointer-events:auto;z-index:7}
+.cap-x:hover{background:rgba(5,12,20,.85)}
+.cap button:focus-visible,.cap a:focus-visible{outline:2px solid #f5a53a;outline-offset:2px}
+@media (max-width:760px){
+  .cap-in{padding:90px 16px calc(14px + env(safe-area-inset-bottom))}
+  .cap-text{font-size:19px;line-height:1.36}
+  .cap-strap b{font-size:12.5px}
+  .cap-h{font-size:34px}
+  .cap-lede{font-size:17px}
+  .cap-close{font-size:19px}
+  .cap-src{font-size:11px}
+  .cap-src a{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+  .cap-link[data-share]{display:none}
+}
+@media (prefers-reduced-motion:reduce){ .cap-low,.cap-card{transition:none} }
