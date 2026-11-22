@@ -217,8 +217,8 @@ body.touring .cap{background:linear-gradient(to top,rgba(5,12,20,.92) 0%,rgba(5,
 body.touring .cap.is-card{inset:0;background:radial-gradient(ellipse at 50% 60%,rgba(5,12,20,.55) 0%,rgba(5,12,20,.88) 75%)}
 .cap-in{pointer-events:auto;max-width:980px;margin:0 auto;padding:110px 48px 22px}
 .cap.is-card .cap-in{height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:22px}
-.cap-low,.cap-card{transition:opacity .7s ease,transform .7s ease}
-.cap.out .cap-low,.cap.out .cap-card{opacity:0;transform:translateY(10px)}
+.cap-low,.cap-card{transition:opacity .45s ease,transform .45s ease}
+.cap.out .cap-low,.cap.out .cap-card{opacity:0;transform:translateY(8px);transition-duration:.25s}
 .cap-strap{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding-left:12px;border-left:4px solid var(--c)}
 .cap-strap b{font-size:14px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
 .cap-strap span{font-size:13px;color:rgba(255,255,255,.72);letter-spacing:.02em}
