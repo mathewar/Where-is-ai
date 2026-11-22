@@ -3,7 +3,7 @@ const fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..');
 const load = (f, names) => new Function(fs.readFileSync(path.join(root, f), 'utf8') + ';return {' + names + '};')();
 const { SRC, NODES, EDGES, LABS } = load('data/graph.js', 'SRC,NODES,EDGES,LABS');
-const { TOURS } = load('data/tours.js', 'TOURS');
+const { TOURS, GLOSSARY } = load('data/tours.js', "TOURS,GLOSSARY:typeof GLOSSARY==='undefined'?[]:GLOSSARY");
 const errs = [];
 const byId = {};
 for (const n of NODES) { if (byId[n.id]) errs.push('duplicate node ' + n.id); byId[n.id] = n; }
@@ -51,5 +51,9 @@ for (const t of TOURS) {
   const loose = ((t.lede || '') + ' ' + (t.close || '')).replace(/\{\{[^}]*\}\}/g, '').match(/\d+(?:[.,]\d+)*/g);
   if (loose) errs.push(where + ': lede/close contain literal numbers (' + loose.join(', ') + '); use {{labs}} / {{reach:id}} or move them into a stop');
 }
+for (const g of GLOSSARY) {
+  if (!g.term || !g.match || !g.text) errs.push('glossary entry needs term, match and text: ' + JSON.stringify(g));
+  else try { new RegExp(g.match, 'i'); } catch (e) { errs.push('glossary ' + g.term + ': bad match pattern'); }
+}
 if (errs.length) { console.error(errs.map(e => '✗ ' + e).join('\n')); console.error(errs.length + ' problem(s)'); process.exit(1); }
-console.log('✓ ' + NODES.length + ' nodes, ' + EDGES.length + ' edges, ' + Object.keys(SRC).length + ' sources, ' + TOURS.length + ' tours: all checks pass');
+console.log('✓ ' + NODES.length + ' nodes, ' + EDGES.length + ' edges, ' + Object.keys(SRC).length + ' sources, ' + TOURS.length + ' tours, ' + GLOSSARY.length + ' glossary terms: all checks pass');

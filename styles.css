@@ -271,3 +271,11 @@ body.touring .cap-bar button.cur b{width:0}
   .cap-link[data-share]{display:none}
 }
 @media (prefers-reduced-motion:reduce){ .cap-low,.cap-card{transition:none} }
+.cap-begin{position:relative;overflow:hidden;margin:26px auto 0;display:inline-flex;align-items:center;justify-content:center;padding:13px 26px;border-radius:999px;background:#fff;color:#0b1824;font-weight:700;font-size:16px}
+.cap-begin b{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(245,165,58,.35)}
+.cap-begin span{position:relative}
+.cap-begin:hover{box-shadow:0 0 0 3px rgba(255,255,255,.35)}
+.cap-hint{margin-top:10px;font-size:12.5px;color:rgba(255,255,255,.6)}
+.cap-gloss{margin:10px 0 0;max-width:42em;font-size:14px;line-height:1.45;color:rgba(255,255,255,.82);padding-left:12px;border-left:2px solid rgba(255,255,255,.3)}
+.cap-gloss b{color:#fff;font-weight:700;margin-right:4px}
+@media (max-width:760px){ .cap-gloss{font-size:13px} .cap-begin{font-size:15px;padding:12px 22px} }

@@ -282,8 +282,17 @@ const appEl = document.getElementById('app');
 const cap = document.createElement('div'); cap.id='cap'; cap.className='cap'; appEl.appendChild(cap);
 // Viewer-attention model (same constants as scripts/attention-sim.js, which tunes them). A stop is held for
 // as long as the viewer needs to re-orient, find the focus, take in its links and read the caption.
-const ATTN = { wps:3.3, strap:0.4, orient0:0.4, orientZ:0.35, offscreen:0.5, find0:0.25, findK:0.035,
-  link:0.6, shortLink:0.5, offLink:0.3, src:0.3, beat:0.8, minHold:4.5, cardBeat:1.2 };
+// Calibrated against a viewer's review: holds felt long at ~200 wpm with map time added on top, so reading is
+// ~250 wpm and the map work (orient, find, links) counts only where it outlasts the camera flight.
+const ATTN = { wps:4.2, strap:0.4, orient0:0.4, orientZ:0.35, offscreen:0.5, find0:0.25, findK:0.035,
+  link:0.6, shortLink:0.5, offLink:0.3, src:0.3, beat:0.6, minHold:3.5, cardBeat:1.0 };
+const GLOSS = (typeof GLOSSARY!=='undefined' && Array.isArray(GLOSSARY) ? GLOSSARY : []).map(g=>{ try{ return Object.assign({re:new RegExp(g.match,'i')}, g); }catch(e){ return null; } }).filter(Boolean);
+// the first glossary term this stop mentions that no earlier stop in the tour has mentioned
+function glossFor(t, i){
+  const txt=fillT(t.stops[i].text), before=t.stops.slice(0,i).map(s=>fillT(s.text)).join(' ');
+  return GLOSS.find(g => g.re.test(txt) && !g.re.test(before)) || null;
+}
+let lastFlight = 0;
 window.__tourModel = ATTN;
 const words = s => String(s).trim().split(/\s+/).length;
 let curHold = 6000, prevView = null;
@@ -293,8 +302,8 @@ function attentionNeed(){
   const t=tour.t, i=tour.i, N=t.stops.length;
   if(i<0) return ATTN.strap + words(fillT(t.title+' '+t.lede))/ATTN.wps + ATTN.cardBeat;
   if(i>=N) return ATTN.strap + words(fillT(t.close))/ATTN.wps + ATTN.cardBeat;
-  const s=t.stops[i], R=ATTN.strap + words(fillT(s.text))/ATTN.wps;
-  if(!mapReady) return R + 1.5;
+  const s=t.stops[i], g=glossFor(t,i), R=ATTN.strap + (words(fillT(s.text)) + (g ? words(g.text)+2 : 0))/ATTN.wps;
+  if(!mapReady) return R + 1;
   const [[l,tp],[r,b]] = safeBox(), inSafe = p => p.x>=l && p.x<=r && p.y>=tp && p.y<=b;
   const w = window.__clutterWeights || {plants:1,nodes:1};
   const plants = map.queryRenderedFeatures([[l,tp],[r,b]],{layers:['plants']}).length;
@@ -308,20 +317,24 @@ function attentionNeed(){
   const F = ATTN.find0 + ATTN.findK*Math.sqrt(clutter);
   const L = pathEdges(s.path).reduce((sum,e)=>{ const a=map.project(byId[e.f].c), bb=map.project(byId[e.t].c);
     return sum + ATTN.link + (Math.hypot(a.x-bb.x,a.y-bb.y)<40?ATTN.shortLink:0) + (!inSafe(a)||!inSafe(bb)?ATTN.offLink:0); }, 0);
-  return O + F + L + R + ATTN.src;
+  return R + Math.max(0, O + F + L - lastFlight) + ATTN.src;   // map work overlaps the flight
 }
 function capHTML(){
   const t=tour.t, i=tour.i, N=t.stops.length;
   let h = '<button class="cap-x" data-tourexit aria-label="Close tour">✕</button><div class="cap-in">';
   if(i<0){
-    h += '<div class="cap-card"><div class="cap-kicker">'+esc(t.kicker||'Tour')+'</div><h2 class="cap-h">'+esc(fillT(t.title))+'</h2><p class="cap-lede">'+esc(fillT(t.lede))+'</p></div>';
+    h += '<div class="cap-card"><div class="cap-kicker">'+esc(t.kicker||'Tour')+'</div><h2 class="cap-h">'+esc(fillT(t.title))+'</h2><p class="cap-lede">'+esc(fillT(t.lede))+'</p>'+
+      '<button class="cap-begin" data-tourbegin><b aria-hidden="true"></b><span>▶ Start the tour</span></button>'+
+      '<div class="cap-hint">'+(playing ? 'Starts by itself in a moment' : 'Or step through with the arrows below')+'</div></div>';
   } else if(i>=N){
     h += '<div class="cap-card"><div class="cap-kicker">'+esc(t.kicker||'Tour')+'</div><p class="cap-close">'+esc(fillT(t.close))+'</p>'+
       '<div class="cap-endb"><button class="cap-btn primary" data-tour="">Another tour</button><button class="cap-btn" data-tourexit="explore">Explore the map</button><button class="cap-btn" data-tourauto>Watch again</button></div></div>';
   } else {
-    const s=t.stops[i], n=byId[s.at], es=pathEdges(s.path);
+    const s=t.stops[i], n=byId[s.at], g=glossFor(t,i);
+    const es = isMobile() ? pathEdges(s.path).slice(-1) : pathEdges(s.path);   // phones: just the link into this stop
     h += '<div class="cap-low"><div class="cap-strap" style="--c:'+kindColor(n)+'"><b>'+esc(n.n)+'</b><span>'+esc(n.p)+(n.a?' · location approximate':'')+'</span></div>'+
       '<p class="cap-text">'+esc(fillT(s.text))+'</p>'+
+      (g ? '<p class="cap-gloss"><b>'+esc(g.term)+'</b> '+esc(g.text)+'</p>' : '')+
       (es.length ? '<div class="cap-src">'+es.map(e=>'<span class="cap-conf '+e.c+'">'+CONF[e.c]+'</span>'+(SRC[e.src[0]] ? '<a href="'+esc(SRC[e.src[0]].u)+'" target="_blank" rel="noopener noreferrer">'+esc(SRC[e.src[0]].t)+' ↗</a>' : '')+(e.src.length>1?'<span class="cap-more">+'+(e.src.length-1)+'</span>':'')).join('<span class="cap-dot">·</span>')+'</div>' : '')+
       '</div>';
   }
@@ -338,6 +351,8 @@ function ctlHTML(){
 }
 function refreshCtl(){ const c=cap.querySelector('.cap-ctl'); if(c){ c.outerHTML=ctlHTML(); } if(playing) runBar(); }
 function runBar(){
+  const bg=cap.querySelector('.cap-begin b');
+  if(bg){ bg.style.transition='none'; bg.style.width='0%'; void bg.offsetWidth; if(playing){ bg.style.transition='width '+curHold+'ms linear'; bg.style.width='100%'; } }
   const b=cap.querySelector('.cap-bar .cur b'); if(!b || !tour) return;
   b.style.transition='none'; b.style.width='0%'; void b.offsetWidth;
   b.style.transition='width '+curHold+'ms linear'; b.style.width='100%';
@@ -411,10 +426,10 @@ function playStep(move){
   const show=()=>{ if(seq!==capSeq || !tour) return; cap.classList.toggle('is-card', card); cap.innerHTML=capHTML(); void cap.offsetWidth; cap.classList.remove('out'); };
   const land=()=>{ if(seq!==capSeq || !tour) return; setLineOpacity(0.95, 450);
     setTimeout(()=>{ if(seq!==capSeq || !tour) return; curHold = Math.round(1000*Math.max(ATTN.minHold, attentionNeed() + ATTN.beat)); schedule(); }, 250); };
-  if(!mapReady){ setTimeout(()=>{ show(); land(); }, 150); return; }
+  if(!mapReady){ lastFlight=0; setTimeout(()=>{ show(); land(); }, 150); return; }
   setLineOpacity(0, 0); drawMap();
-  if(!move){ setTimeout(()=>{ show(); land(); }, had ? 260 : 0); return; }
-  const cam = tourCamera();
+  if(!move){ lastFlight=0; setTimeout(()=>{ show(); land(); }, had ? 260 : 0); return; }
+  const cam = tourCamera(); lastFlight = cam.duration/1000;
   map.flyTo({center:cam.center, zoom:cam.zoom, padding:cam.padding, duration:cam.duration, essential:true});
   setTimeout(show, Math.max(had ? 260 : 0, cam.duration - 650));   // narration starts as the camera settles
   let done=false; const fin=()=>{ if(done) return; done=true; land(); };
@@ -538,10 +553,11 @@ document.addEventListener('click', ev => {
   if(ev.target.closest('a')) return;
   if(ev.target.closest('[data-share]')){ share(); return; }
   if(ev.target.closest('[data-about]')){ expand(); const el=document.getElementById('about'); if(el) el.scrollIntoView({behavior:reduceMotion?'auto':'smooth',block:'start'}); return; }
-  const tb = ev.target.closest('[data-tour],[data-tourstep],[data-tourgo],[data-tourexit],[data-tourauto]');
+  const tb = ev.target.closest('[data-tour],[data-tourstep],[data-tourgo],[data-tourexit],[data-tourauto],[data-tourbegin]');
   if(tb){
     if(tb.disabled) return;
-    if(tb.hasAttribute('data-tour')) startTour(tb.getAttribute('data-tour')||null);
+    if(tb.hasAttribute('data-tourbegin')){ playing=true; tourTo(0); }
+    else if(tb.hasAttribute('data-tour')) startTour(tb.getAttribute('data-tour')||null);
     else if(tb.hasAttribute('data-tourauto')) toggleAuto();
     else if(tb.hasAttribute('data-tourexit')) exitTour(tb.getAttribute('data-tourexit')==='explore');
     else if(tour){ tourTo(tb.hasAttribute('data-tourstep') ? tour.i + (+tb.getAttribute('data-tourstep')) : +tb.getAttribute('data-tourgo')); }
