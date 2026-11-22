@@ -218,6 +218,9 @@ function renderHome(){
 function aboutHTML(){
   return '<section class="about" id="about" aria-labelledby="about-h"><h2 id="about-h">About</h2>'+
     '<p>Supply Lines traces where frontier AI comes from: the clouds, chips, memory, fabs, lithography, materials, power and data behind each major lab, with a source on every link. The data is refreshed weekly from public reporting.</p>'+
+    '<h3 class="about-h3">How it’s made</h3>'+
+    '<p>The data is maintained with help from an AI agent (Claude). Each week it searches news, filings and company announcements, proposes changes with sources, and looks for an independent second source for each one; I review every change before it goes live. The tours are written from the same data, and a script checks that every figure in a tour appears in the sources behind it. Pins marked approximate and power links inferred from proximity are estimates, not facts.</p>'+
+    '<p>It will still get things wrong. Corrections with a source are the most useful feedback you can send.</p>'+
     '<p>Stock listings are shown for reference, linking to Google Finance. They aren’t investment advice.</p>'+
     '<p class="byline">Made by Arun at intuslabs · <a href="mailto:arun@intuslabs.com">arun@intuslabs.com</a></p>'+
     '<p><a class="fbbtn" href="'+esc(feedbackURL(null))+'" target="_blank" rel="noopener noreferrer">Send feedback</a><span class="fbnote">Opens a GitHub issue. Corrections with a source link are especially welcome.</span></p>'+
