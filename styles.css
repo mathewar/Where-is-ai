@@ -279,3 +279,4 @@ body.touring .cap-bar button.cur b{width:0}
 .cap-gloss{margin:10px 0 0;max-width:42em;font-size:14px;line-height:1.45;color:rgba(255,255,255,.82);padding-left:12px;border-left:2px solid rgba(255,255,255,.3)}
 .cap-gloss b{color:#fff;font-weight:700;margin-right:4px}
 @media (max-width:760px){ .cap-gloss{font-size:13px} .cap-begin{font-size:15px;padding:12px 22px} }
+.about-h3{font-size:13px;font-weight:700;margin:14px 0 6px}

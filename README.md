@@ -10,7 +10,7 @@ Static site, no build step. Drag this folder into Vercel (or Netlify Drop), or r
 Local preview: `npx serve .` (open via a server, not file://, so everything loads cleanly).
 
 ## Files
-- `index.html` – page shell
+- `index.html` – page shell (with link-preview tags; `og.png` is the 1200×630 preview image)
 - `styles.css` – app styles (`vendor/maplibre-gl.css` is the map library's own CSS)
 - `app.js` – map, navigation, rendering
 - `config.js` – basemap switch (see below)
