@@ -213,7 +213,7 @@ function renderHome(){
     '<div class="legend-conf"><span class="conf c">Confirmed</span><span class="conf r">Reported</span><span class="conf i">Inferred</span></div>'+
     '<p style="margin-top:10px">Every link carries its source. Confirmed links come from company announcements; reported links from press reporting; inferred links are reasoned from the evidence cited and are drawn dashed on the map.</p>'+
     '<p>Power links from data centers, fabs and memory plants to nearby plants are inferred from proximity: the largest plants within 120 km on WRI’s Global Power Plant Database. They show what the local grid looks like, not a signed contract, unless marked confirmed.</p>'+
-    '<p>Pins marked “location approximate” stand in for sites that aren’t public. Deals current as of mid-November 2026.</p></div>'+aboutHTML();
+    '<p>Pins marked “location approximate” stand in for sites that aren’t public. Deals current as of late November 2026.</p></div>'+aboutHTML();
 }
 function aboutHTML(){
   return '<section class="about" id="about" aria-labelledby="about-h"><h2 id="about-h">About</h2>'+
